@@ -120,7 +120,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (process.env.API_KEY) {
-      aiRef.current = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
+      aiRef.current = new GoogleGenAI({ apiKey: process.env.API_KEY });
     } else {
       setError("API Key non trovata.");
     }
