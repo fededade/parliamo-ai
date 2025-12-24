@@ -119,10 +119,13 @@ const App: React.FC = () => {
   const currentOutputTransRef = useRef('');
 
   useEffect(() => {
-    if (process.env.API_KEY) {
-      aiRef.current = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // VERCEL UPDATE: Use import.meta.env.VITE_API_KEY
+    const apiKey = import.meta.env.VITE_API_KEY;
+    if (apiKey) {
+      aiRef.current = new GoogleGenAI({ apiKey });
     } else {
-      setError("API Key non trovata.");
+      // Non mostriamo errore subito per evitare flash, ma lo logghiamo
+      console.warn("API Key non trovata in import.meta.env.VITE_API_KEY");
     }
     return () => disconnect();
   }, []);
@@ -161,7 +164,10 @@ const App: React.FC = () => {
   };
 
   const handleConfigSubmit = async () => {
-    if (!aiRef.current) return;
+    if (!aiRef.current) {
+        setError("API Key mancante. Configura VITE_API_KEY su Vercel.");
+        return;
+    }
     setIsGeneratingProfile(true);
     setError(null);
 
@@ -256,7 +262,10 @@ const App: React.FC = () => {
   };
 
   const connect = async () => {
-    if (!aiRef.current) return;
+    if (!aiRef.current) {
+        setError("Chiave API non trovata. Controlla le impostazioni di Vercel.");
+        return;
+    }
     setError(null);
     try {
       inputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
