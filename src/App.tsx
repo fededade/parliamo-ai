@@ -119,14 +119,31 @@ const App: React.FC = () => {
   const currentOutputTransRef = useRef('');
 
   useEffect(() => {
-    // VERCEL UPDATE: Use import.meta.env.VITE_API_KEY
-    const apiKey = import.meta.env.VITE_API_KEY;
+    // VERCEL FIX: Defensive API Key retrieval
+    // import.meta.env might be undefined in some build contexts, causing the crash.
+    let apiKey = '';
+    try {
+        // Use optional chaining to safely access VITE_API_KEY
+        // @ts-ignore
+        apiKey = import.meta.env?.VITE_API_KEY;
+    } catch(e) {
+        console.warn("import.meta.env access error", e);
+    }
+
+    // Fallback to process.env if available (sometimes polyfilled)
+    if (!apiKey) {
+        try {
+            // @ts-ignore
+            apiKey = process.env?.VITE_API_KEY || process.env?.API_KEY;
+        } catch(e) {}
+    }
+
     if (apiKey) {
       aiRef.current = new GoogleGenAI({ apiKey });
     } else {
-      // Non mostriamo errore subito per evitare flash, ma lo logghiamo
-      console.warn("API Key non trovata in import.meta.env.VITE_API_KEY");
+      console.warn("API Key mancante. Assicurati che VITE_API_KEY sia impostata nelle variabili d'ambiente di Vercel.");
     }
+    
     return () => disconnect();
   }, []);
 
