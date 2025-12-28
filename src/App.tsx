@@ -87,8 +87,13 @@ const App: React.FC = () => {
     eyeColor: 'Verdi',
     skinTone: 'Chiara',
     bodyType: 'Normale',
-    physicalTraits: 'Sorriso gentile',
-    personality: 'Empatica, calma, saggia, buona ascoltatrice',
+    physicalTraits: '',
+    personality: '',
+    // Nuovi campi per personalità a dropdown
+    temperament: 'Calmo/a',
+    sociality: 'Empatico/a',
+    mood: 'Ottimista',
+    commStyle: 'Buon ascoltatore',
     name: '',
     biography: '',
     visualPrompt: '',
@@ -110,15 +115,23 @@ const App: React.FC = () => {
                          config.eyeColor !== '' && 
                          config.skinTone !== '' &&
                          config.bodyType !== '' &&
-                         config.personality !== '';
+                         config.temperament !== '' &&
+                         config.sociality !== '';
+  
+  // Costruisci la stringa personalità dai dropdown
+  const buildPersonality = () => {
+    return `${config.temperament}, ${config.sociality}, ${config.mood}, ${config.commStyle}`;
+  };
 
   // App State
   const [isConnected, setIsConnected] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const isMutedRef = useRef(false); // Ref per il mute che funziona nel callback audio
   const [transcripts, setTranscripts] = useState<TranscriptItem[]>([]);
   const [audioVolume, setAudioVolume] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(false); // Per sidebar mobile
 
   // Refs
   const inputAudioContextRef = useRef<AudioContext | null>(null);
@@ -255,11 +268,19 @@ const App: React.FC = () => {
           });
           
           // Se la sessione live è attiva, invia il testo per farlo pronunciare dall'IA
+          // NOTA: Usiamo un messaggio che indica chiaramente di SOLO ripetere, senza aggiungere altro
           if (isConnected && sessionPromiseRef.current) {
             try {
               const session = await sessionPromiseRef.current;
-              // Invia un messaggio di testo alla sessione per farlo leggere con la voce dell'assistente
-              session.sendClientContent({ turns: [{ role: 'user', parts: [{ text: `Leggi ad alta voce questo commento che hai appena scritto sulla foto: "${aiComment}"` }] }] });
+              // Inviamo come se fosse un messaggio dell'assistente da pronunciare, non una domanda dell'utente
+              session.sendClientContent({ 
+                turns: [
+                  { 
+                    role: 'user', 
+                    parts: [{ text: `[ISTRUZIONE SISTEMA: L'utente ha inviato una foto e tu hai già scritto questo commento nella chat. Ora devi SOLO pronunciare ad alta voce esattamente queste parole, senza aggiungere NULLA prima o dopo, senza dire che non hai ricevuto foto perché l'hai già commentata. Pronuncia SOLO questo testo:] "${aiComment}"` }] 
+                  }
+                ] 
+              });
             } catch (e) {
               console.log('Sessione non disponibile per TTS');
             }
@@ -300,14 +321,17 @@ const App: React.FC = () => {
     setIsGeneratingProfile(true);
     setError(null);
 
+    // Costruisci la personalità dai dropdown
+    const personalityString = buildPersonality();
+    
     try {
         const hasManualName = config.name && config.name.trim().length > 0;
         setLoadingStep(hasManualName ? `Sto definendo la personalità di ${config.name}...` : 'Sto creando il tuo  amico ideale...');
         
-        const basePrompt = `Crea un profilo per un COMPAGNO UMANO: Genere ${config.gender}, Età ${config.age}, Capelli ${config.hairColor}, Occhi ${config.eyeColor}, Pelle ${config.skinTone}, Corporatura ${config.bodyType || 'Normale'}, Caratteristiche fisiche: ${config.physicalTraits}, Personalità ${config.personality}.`;
+        const basePrompt = `Crea un profilo per un COMPAGNO UMANO: Genere ${config.gender}, Età ${config.age}, Capelli ${config.hairColor}, Occhi ${config.eyeColor}, Pelle ${config.skinTone}, Corporatura ${config.bodyType || 'Normale'}, Caratteristiche fisiche: ${config.physicalTraits}, Personalità ${personalityString}.`;
         const nameInstruction = hasManualName ? `Il nome è "${config.name}".` : `Inventa un nome italiano creativo.`;
 
-        const profilePrompt = `${basePrompt} ${nameInstruction} Rispondi JSON: {name, biography, visualPrompt}. La biography deve includere hobby, studi, esperienze. Il visualPrompt deve essere dettagliato per generare un ritratto fotorealistico.`;
+        const profilePrompt = `${basePrompt} ${nameInstruction} Rispondi JSON: {name, biography, visualPrompt}. IMPORTANTE: La biography DEVE essere scritta in ITALIANO e deve includere hobby, studi, esperienze di vita in modo naturale e colloquiale (2-3 frasi). Il visualPrompt deve essere in inglese e dettagliato per generare un ritratto fotorealistico.`;
         
         const textResponse = await aiRef.current.models.generateContent({
             model: TEXT_MODEL_NAME,
@@ -318,7 +342,8 @@ const App: React.FC = () => {
         const profileData = JSON.parse(textResponse.text || '{}');
         if (!profileData.name) throw new Error("Errore generazione profilo.");
 
-        setConfig(prev => ({ ...prev, name: profileData.name, biography: profileData.biography, visualPrompt: profileData.visualPrompt }));
+        // Salva anche la personalità costruita
+        setConfig(prev => ({ ...prev, name: profileData.name, biography: profileData.biography, visualPrompt: profileData.visualPrompt, personality: personalityString }));
         setLoadingStep(`Sto scattando una foto a ${profileData.name}...`);
         
         let foundUrl: string | null = null;
@@ -456,9 +481,28 @@ const App: React.FC = () => {
     }
     setError(null);
     try {
+      // Verifica se siamo su HTTPS (necessario per il microfono su mobile)
+      if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+        setError("Per usare il microfono è necessaria una connessione sicura (HTTPS).");
+        return;
+      }
+      
       inputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (micError: any) {
+        if (micError.name === 'NotAllowedError' || micError.name === 'PermissionDeniedError') {
+          setError("Accesso al microfono negato. Controlla le impostazioni del browser e consenti l'accesso al microfono.");
+        } else if (micError.name === 'NotFoundError') {
+          setError("Nessun microfono trovato. Collega un microfono e riprova.");
+        } else {
+          setError("Errore accesso microfono: " + micError.message);
+        }
+        return;
+      }
       
       const ageNum = parseInt(config.age) || 30;
       let selectedVoiceName = config.gender === 'Uomo' ? (ageNum < 35 ? 'Puck' : 'Fenrir') : (ageNum < 35 ? 'Aoede' : 'Kore');
@@ -472,9 +516,11 @@ const App: React.FC = () => {
           
 REGOLE FONDAMENTALI:
 - Sii naturale, empatico, colloquiale. Non dire MAI di essere un'AI o un assistente virtuale.
-- Quando ${config.userName} ti chiede una TUA foto o un selfie, NON chiamare subito lo strumento. PRIMA devi parlare:reagisci con un po' di IMBARAZZO e timidezza, come farebbe una persona vera. Esempio: "Oh... una mia foto? Ehm, non so se vengo bene in foto..." poi dopo un attimo di esitazione accetta: "Va bene dai, aspetta che me la scatto... eccola!"
-- CHIAMA lo strumento 'generate_image' SOLO ALLA FINE della tua frase parlata.
-- L'ordine deve essere: [PARLATO DI IMBARAZZO] -> [CHIAMATA STRUMENTO].
+- Quando ${config.userName} ti chiede una TUA foto o un selfie, segui SEMPRE questa sequenza:
+  1. PRIMA reagisci con IMBARAZZO e timidezza, come farebbe una persona vera. Esempio: "Oh... una mia foto? Ehm, non so se vengo bene in foto..."
+  2. POI chiedi che tipo di foto preferisce: "Vuoi un primo piano del viso, a mezzo busto, oppure una foto intera?" (SOLO se l'utente non ha già specificato)
+  3. SOLO DOPO che l'utente ha risposto (o se aveva già specificato), chiama lo strumento 'generate_image' con is_selfie=true e nel prompt specifica l'inquadratura richiesta (close-up portrait, medium shot waist-up, full body shot)
+- Se l'utente specifica già l'inquadratura nella richiesta iniziale, salta il punto 2 e procedi direttamente.
 - Quando ${config.userName} ti invia una foto sua, commentala con entusiasmo e curiosità genuina, fai domande per saperne di più.
 - Parla sempre in italiano in modo naturale e amichevole.`,
           tools: allTools,
@@ -498,7 +544,7 @@ REGOLE FONDAMENTALI:
               let sum = 0;
               for(let i=0;i<inputData.length;i++) sum+=inputData[i]*inputData[i];
               if(Math.random()>0.8) setAudioVolume(Math.sqrt(sum/inputData.length)*5);
-              if(isMuted) return;
+              if(isMutedRef.current) return; // Usa il ref invece dello state
               sessionPromiseRef.current?.then(session => session.sendRealtimeInput({ media: createBlob(inputData) })).catch(console.error);
             };
             source.connect(processor);
@@ -571,7 +617,11 @@ REGOLE FONDAMENTALI:
     setIsConnected(false); setAudioVolume(0);
   };
 
-  const toggleMute = () => setIsMuted(!isMuted);
+  const toggleMute = () => {
+    const newMutedState = !isMuted;
+    setIsMuted(newMutedState);
+    isMutedRef.current = newMutedState; // Aggiorna anche il ref
+  };
   const transcriptRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (transcriptRef.current) transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight; }, [transcripts]);
 
@@ -588,7 +638,7 @@ REGOLE FONDAMENTALI:
           fontFamily: 'Outfit, sans-serif',
           color: '#1e293b'
         }}>
-            {/* CSS Animation for pulsing heart */}
+            {/* CSS Animation for pulsing heart + Mobile Responsive */}
             <style>{`
               @keyframes heartPulse {
                 0%, 100% { transform: scale(1); box-shadow: 0 0 15px rgba(147, 51, 234, 0.6); }
@@ -603,9 +653,53 @@ REGOLE FONDAMENTALI:
                 cursor: pointer;
                 box-shadow: 0 2px 6px rgba(147, 51, 234, 0.4);
               }
+              @keyframes spin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+              }
+              .animate-spin {
+                animation: spin 1s linear infinite;
+              }
+              /* Mobile Responsive */
+              @media (max-width: 900px) {
+                .config-container {
+                  flex-direction: column !important;
+                  padding: 20px !important;
+                  gap: 20px !important;
+                }
+                .config-left-column {
+                  flex: none !important;
+                  width: 100% !important;
+                  text-align: center !important;
+                }
+                .config-left-column h1 {
+                  font-size: 36px !important;
+                }
+                .config-left-column p {
+                  max-width: 100% !important;
+                }
+                .config-right-column {
+                  width: 100% !important;
+                  max-width: 100% !important;
+                }
+                .config-form {
+                  max-height: none !important;
+                }
+                .config-grid-4 {
+                  grid-template-columns: 1fr 1fr !important;
+                }
+                .personality-grid {
+                  grid-template-columns: 1fr !important;
+                }
+              }
+              @media (max-width: 480px) {
+                .config-grid-2, .config-grid-4 {
+                  grid-template-columns: 1fr !important;
+                }
+              }
             `}</style>
             {/* Main Container - Two Columns */}
-            <div style={{
+            <div className="config-container" style={{
               maxWidth: '1200px',
               margin: '0 auto',
               padding: '40px',
@@ -619,7 +713,7 @@ REGOLE FONDAMENTALI:
             }}>
                 
                 {/* LEFT COLUMN: Brand & Description */}
-                <div style={{ flex: '0 0 420px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <div className="config-left-column" style={{ flex: '0 0 420px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                     
                     {/* Logo + Project Name - LOGO PIÙ GRANDE */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '32px' }}>
@@ -667,20 +761,25 @@ REGOLE FONDAMENTALI:
                         Configurami, dammi un volto e una voce, e parliamo di tutto ciò che ti passa per la testa.
                     </p>
 
-                    {/* Feature Badge - Cuore lampeggiante quando form è completo */}
-                    <div style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '16px',
-                      padding: '16px 24px 16px 16px',
-                      borderRadius: '16px',
-                      backgroundColor: isFormComplete ? 'rgba(147, 51, 234, 0.1)' : 'rgba(255,255,255,0.7)',
-                      border: isFormComplete ? '2px solid rgba(147, 51, 234, 0.5)' : '1px solid rgba(255,255,255,0.8)',
-                      backdropFilter: 'blur(8px)',
-                      width: 'fit-content',
-                      transition: 'all 0.3s ease',
-                      boxShadow: isFormComplete ? '0 0 20px rgba(147, 51, 234, 0.3)' : 'none'
-                    }}>
+                    {/* Feature Badge - Cuore lampeggiante quando form è completo - CLICCABILE */}
+                    <button
+                      onClick={isFormComplete && !isGeneratingProfile ? handleConfigSubmit : undefined}
+                      disabled={!isFormComplete || isGeneratingProfile}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '16px',
+                        padding: '16px 24px 16px 16px',
+                        borderRadius: '16px',
+                        backgroundColor: isFormComplete ? 'rgba(147, 51, 234, 0.1)' : 'rgba(255,255,255,0.7)',
+                        border: isFormComplete ? '2px solid rgba(147, 51, 234, 0.5)' : '1px solid rgba(255,255,255,0.8)',
+                        backdropFilter: 'blur(8px)',
+                        width: 'fit-content',
+                        transition: 'all 0.3s ease',
+                        boxShadow: isFormComplete ? '0 0 20px rgba(147, 51, 234, 0.3)' : 'none',
+                        cursor: isFormComplete && !isGeneratingProfile ? 'pointer' : 'default',
+                        outline: 'none'
+                      }}>
                         <div style={{
                           width: '40px',
                           height: '40px',
@@ -690,15 +789,15 @@ REGOLE FONDAMENTALI:
                           alignItems: 'center',
                           justifyContent: 'center',
                           color: isFormComplete ? 'white' : '#9333ea',
-                          animation: isFormComplete ? 'heartPulse 1s ease-in-out infinite' : 'none',
+                          animation: isFormComplete && !isGeneratingProfile ? 'heartPulse 1s ease-in-out infinite' : 'none',
                           boxShadow: isFormComplete ? '0 0 15px rgba(147, 51, 234, 0.6)' : 'none'
                         }}>
-                            <Heart fill="currentColor" size={20} />
+                            {isGeneratingProfile ? <Loader2 className="animate-spin" size={20} /> : <Heart fill="currentColor" size={20} />}
                         </div>
                         <span style={{ fontWeight: 600, color: isFormComplete ? '#9333ea' : '#334155' }}>
-                          {isFormComplete ? 'Pronto! Creiamo il tuo amico!' : 'Ascolto Attivo'}
+                          {isGeneratingProfile ? (loadingStep || 'Creazione...') : (isFormComplete ? 'Pronto! Clicca per creare!' : 'Compila tutti i campi')}
                         </span>
-                    </div>
+                    </button>
                     
                     {/* Spacer */}
                     <div style={{ flex: 1 }} />
@@ -716,9 +815,9 @@ REGOLE FONDAMENTALI:
                 </div>
 
                 {/* RIGHT COLUMN: Configuration Form - TRASPARENTE */}
-                <div style={{ flex: 1, maxWidth: '650px' }}>
+                <div className="config-right-column" style={{ flex: 1, maxWidth: '650px' }}>
                     {/* Form SENZA box bianco - completamente trasparente */}
-                    <div style={{
+                    <div className="config-form" style={{
                       padding: '20px',
                       maxHeight: '85vh',
                       overflowY: 'auto'
@@ -764,7 +863,7 @@ REGOLE FONDAMENTALI:
                                 <Bot size={20} style={{ color: '#f59e0b' }}/> Il tuo Confidente
                             </h3>
                             
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                            <div className="config-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                                 <div>
                                     <label style={{ display: 'block', color: '#64748b', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>Genere Assistente</label>
                                     <div style={{ position: 'relative' }}>
@@ -846,7 +945,7 @@ REGOLE FONDAMENTALI:
                                 <Wand2 size={20} style={{ color: '#94a3b8' }}/> Aspetto Fisico
                             </h3>
                             
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                            <div className="config-grid-4" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px', marginBottom: '16px' }}>
                                 <div>
                                     <label style={{ display: 'block', color: '#64748b', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>Capelli</label>
                                     <input 
@@ -890,9 +989,9 @@ REGOLE FONDAMENTALI:
                                 </div>
                             </div>
                             
-                            {/* Caratteristiche Fisiche */}
+                            {/* Caratteristiche Fisiche e Abbigliamento */}
                             <div style={{ marginBottom: '16px' }}>
-                                <label style={{ display: 'block', color: '#64748b', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>Caratteristiche Fisiche (occhiali, lentiggini, tatuaggi, ecc.)</label>
+                                <label style={{ display: 'block', color: '#64748b', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>Dettagli Fisici e Abbigliamento</label>
                                 <input 
                                     style={{
                                       width: '100%',
@@ -907,36 +1006,81 @@ REGOLE FONDAMENTALI:
                                       boxSizing: 'border-box',
                                       backdropFilter: 'blur(4px)'
                                     }}
-                                    placeholder="Es: Occhiali eleganti, lentiggini, sorriso gentile..."
+                                    placeholder="Es: Occhiali eleganti, orecchini, cappello, lentiggini, tatuaggi..."
                                     value={config.physicalTraits}
                                     onChange={(e) => setConfig({...config, physicalTraits: e.target.value})}
                                 />
                             </div>
                             
-                            {/* Carattere & Personalità */}
+                            {/* Carattere & Personalità - Menu a tendina */}
                             <div>
                                 <label style={{ display: 'block', color: '#64748b', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>Carattere & Personalità</label>
-                                <textarea 
-                                    style={{
-                                      width: '100%',
-                                      backgroundColor: 'rgba(255,255,255,0.75)',
-                                      border: '1px solid rgba(226,232,240,0.6)',
-                                      borderRadius: '16px',
-                                      padding: '16px 20px',
-                                      fontSize: '15px',
-                                      color: '#1e293b',
-                                      height: '80px',
-                                      resize: 'none',
-                                      outline: 'none',
-                                      fontWeight: 500,
-                                      lineHeight: 1.6,
-                                      boxSizing: 'border-box',
-                                      backdropFilter: 'blur(4px)'
-                                    }}
-                                    placeholder="Es: Empatica, calma, saggia, buona ascoltatrice..."
-                                    value={config.personality}
-                                    onChange={(e) => setConfig({...config, personality: e.target.value})}
-                                />
+                                <div className="personality-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                    <div style={{ position: 'relative' }}>
+                                        <label style={{ display: 'block', color: '#94a3b8', fontSize: '9px', fontWeight: 600, marginBottom: '4px' }}>Temperamento</label>
+                                        <select
+                                            style={{ width: '100%', backgroundColor: 'rgba(255,255,255,0.75)', border: '1px solid rgba(226,232,240,0.6)', borderRadius: '10px', padding: '10px 12px', fontSize: '13px', color: '#1e293b', outline: 'none', fontWeight: 500, boxSizing: 'border-box', backdropFilter: 'blur(4px)', appearance: 'none', cursor: 'pointer' }}
+                                            value={config.temperament || 'Calmo/a'}
+                                            onChange={(e) => setConfig({...config, temperament: e.target.value})}
+                                        >
+                                            <option>Calmo/a</option>
+                                            <option>Energico/a</option>
+                                            <option>Riflessivo/a</option>
+                                            <option>Spontaneo/a</option>
+                                            <option>Paziente</option>
+                                            <option>Vivace</option>
+                                        </select>
+                                        <div style={{ position: 'absolute', right: '10px', bottom: '12px', pointerEvents: 'none', color: '#94a3b8', fontSize: '9px' }}>▼</div>
+                                    </div>
+                                    <div style={{ position: 'relative' }}>
+                                        <label style={{ display: 'block', color: '#94a3b8', fontSize: '9px', fontWeight: 600, marginBottom: '4px' }}>Socialità</label>
+                                        <select
+                                            style={{ width: '100%', backgroundColor: 'rgba(255,255,255,0.75)', border: '1px solid rgba(226,232,240,0.6)', borderRadius: '10px', padding: '10px 12px', fontSize: '13px', color: '#1e293b', outline: 'none', fontWeight: 500, boxSizing: 'border-box', backdropFilter: 'blur(4px)', appearance: 'none', cursor: 'pointer' }}
+                                            value={config.sociality || 'Empatico/a'}
+                                            onChange={(e) => setConfig({...config, sociality: e.target.value})}
+                                        >
+                                            <option>Empatico/a</option>
+                                            <option>Riservato/a</option>
+                                            <option>Estroverso/a</option>
+                                            <option>Introverso/a</option>
+                                            <option>Socievole</option>
+                                            <option>Selettivo/a</option>
+                                        </select>
+                                        <div style={{ position: 'absolute', right: '10px', bottom: '12px', pointerEvents: 'none', color: '#94a3b8', fontSize: '9px' }}>▼</div>
+                                    </div>
+                                    <div style={{ position: 'relative' }}>
+                                        <label style={{ display: 'block', color: '#94a3b8', fontSize: '9px', fontWeight: 600, marginBottom: '4px' }}>Umore</label>
+                                        <select
+                                            style={{ width: '100%', backgroundColor: 'rgba(255,255,255,0.75)', border: '1px solid rgba(226,232,240,0.6)', borderRadius: '10px', padding: '10px 12px', fontSize: '13px', color: '#1e293b', outline: 'none', fontWeight: 500, boxSizing: 'border-box', backdropFilter: 'blur(4px)', appearance: 'none', cursor: 'pointer' }}
+                                            value={config.mood || 'Ottimista'}
+                                            onChange={(e) => setConfig({...config, mood: e.target.value})}
+                                        >
+                                            <option>Ottimista</option>
+                                            <option>Realista</option>
+                                            <option>Sognatore</option>
+                                            <option>Ironico/a</option>
+                                            <option>Serio/a</option>
+                                            <option>Allegro/a</option>
+                                        </select>
+                                        <div style={{ position: 'absolute', right: '10px', bottom: '12px', pointerEvents: 'none', color: '#94a3b8', fontSize: '9px' }}>▼</div>
+                                    </div>
+                                    <div style={{ position: 'relative' }}>
+                                        <label style={{ display: 'block', color: '#94a3b8', fontSize: '9px', fontWeight: 600, marginBottom: '4px' }}>Stile comunicativo</label>
+                                        <select
+                                            style={{ width: '100%', backgroundColor: 'rgba(255,255,255,0.75)', border: '1px solid rgba(226,232,240,0.6)', borderRadius: '10px', padding: '10px 12px', fontSize: '13px', color: '#1e293b', outline: 'none', fontWeight: 500, boxSizing: 'border-box', backdropFilter: 'blur(4px)', appearance: 'none', cursor: 'pointer' }}
+                                            value={config.commStyle || 'Buon ascoltatore'}
+                                            onChange={(e) => setConfig({...config, commStyle: e.target.value})}
+                                        >
+                                            <option>Buon ascoltatore</option>
+                                            <option>Consigliere</option>
+                                            <option>Diretto/a</option>
+                                            <option>Diplomatico/a</option>
+                                            <option>Incoraggiante</option>
+                                            <option>Scherzoso/a</option>
+                                        </select>
+                                        <div style={{ position: 'absolute', right: '10px', bottom: '12px', pointerEvents: 'none', color: '#94a3b8', fontSize: '9px' }}>▼</div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         
@@ -999,38 +1143,16 @@ REGOLE FONDAMENTALI:
                             </div>
                         </div>
 
-                        {/* Submit Button */}
-                        <button 
-                            onClick={handleConfigSubmit}
-                            disabled={isGeneratingProfile}
-                            style={{
-                              width: '100%',
-                              backgroundColor: isGeneratingProfile ? '#64748b' : '#0f172a',
-                              color: 'white',
-                              padding: '20px',
-                              borderRadius: '16px',
-                              fontWeight: 700,
-                              fontSize: '16px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '12px',
-                              border: 'none',
-                              cursor: isGeneratingProfile ? 'not-allowed' : 'pointer',
-                              boxShadow: '0 8px 24px rgba(15, 23, 42, 0.2)',
-                              transition: 'all 0.2s'
-                            }}
-                        >
-                            {isGeneratingProfile ? (
-                                <>
-                                    <Loader2 className="animate-spin" /> {loadingStep || 'Creazione in corso...'}
-                                </>
-                            ) : (
-                                <>
-                                    Crea il tuo Confidente <ArrowRight />
-                                </>
-                            )}
-                        </button>
+                        {/* Messaggio per mobile - indica di cliccare sul badge */}
+                        <div style={{
+                          textAlign: 'center',
+                          padding: '16px',
+                          color: '#64748b',
+                          fontSize: '13px',
+                          fontWeight: 500
+                        }}>
+                          {isFormComplete ? '👆 Clicca sul cuore pulsante per creare il tuo Confidente' : 'Compila tutti i campi per continuare'}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1054,12 +1176,63 @@ REGOLE FONDAMENTALI:
       overflow: 'hidden'
     }}>
       
+      {/* CSS per mobile chat */}
+      <style>{`
+        @media (max-width: 768px) {
+          .chat-sidebar {
+            position: fixed !important;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 280px !important;
+            min-width: 280px !important;
+            max-width: 280px !important;
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+            z-index: 100 !important;
+          }
+          .chat-sidebar.show {
+            transform: translateX(0);
+          }
+          .chat-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 99;
+          }
+          .chat-overlay.show {
+            display: block;
+          }
+          .mobile-menu-btn {
+            display: flex !important;
+          }
+          .chat-main {
+            width: 100% !important;
+          }
+        }
+        @media (min-width: 769px) {
+          .mobile-menu-btn {
+            display: none !important;
+          }
+          .chat-overlay {
+            display: none !important;
+          }
+        }
+      `}</style>
+      
+      {/* Overlay per mobile */}
+      <div 
+        className={`chat-overlay ${showSidebar ? 'show' : ''}`}
+        onClick={() => setShowSidebar(false)}
+      />
+      
       {/* LEFT COLUMN: PROFILE SIDEBAR - RESPONSIVE */}
-      <aside style={{
+      <aside className={`chat-sidebar ${showSidebar ? 'show' : ''}`} style={{
         width: '320px',
         minWidth: '280px',
         maxWidth: '350px',
-        backgroundColor: 'rgba(255,255,255,0.9)',
+        backgroundColor: 'rgba(255,255,255,0.95)',
         backdropFilter: 'blur(12px)',
         borderRight: '1px solid rgba(226,232,240,0.6)',
         display: 'flex',
@@ -1071,9 +1244,30 @@ REGOLE FONDAMENTALI:
         flexShrink: 0
       }}>
         
+        {/* Pulsante chiudi sidebar mobile */}
+        <button
+          className="mobile-menu-btn"
+          onClick={() => setShowSidebar(false)}
+          style={{
+            position: 'absolute',
+            top: '10px',
+            right: '10px',
+            padding: '8px',
+            backgroundColor: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            display: 'none',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#64748b'
+          }}
+        >
+          ✕
+        </button>
+        
         {/* Header: Logo + Progetto Confidente - CLICCABILE per tornare al menu */}
         <div 
-          onClick={() => { if(window.confirm('Vuoi tornare al menu principale? La conversazione verrà terminata.')) { disconnect(); setIsConfigured(false); } }}
+          onClick={() => { if(window.confirm('Vuoi tornare al menu principale? La conversazione verrà terminata.')) { disconnect(); setIsConfigured(false); setShowSidebar(false); } }}
           style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', cursor: 'pointer', transition: 'opacity 0.2s' }}
           onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
           onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
@@ -1304,7 +1498,7 @@ REGOLE FONDAMENTALI:
       </aside>
 
       {/* RIGHT COLUMN: CHAT AREA */}
-      <main style={{
+      <main className="chat-main" style={{
         flex: 1,
         display: 'flex',
         flexDirection: 'column',
@@ -1313,6 +1507,29 @@ REGOLE FONDAMENTALI:
         height: '100%',
         backgroundColor: 'rgba(255,255,255,0.3)'
       }}>
+        
+        {/* Mobile Menu Button */}
+        <button
+          className="mobile-menu-btn"
+          onClick={() => setShowSidebar(true)}
+          style={{
+            position: 'absolute',
+            top: '10px',
+            left: '10px',
+            zIndex: 50,
+            padding: '10px',
+            backgroundColor: 'white',
+            border: '1px solid #e2e8f0',
+            borderRadius: '10px',
+            cursor: 'pointer',
+            display: 'none',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+          }}
+        >
+          <Menu size={20} style={{ color: '#64748b' }} />
+        </button>
         
         {/* Error Message */}
         {error && (
@@ -1331,7 +1548,9 @@ REGOLE FONDAMENTALI:
             alignItems: 'center',
             gap: '8px',
             fontWeight: 500,
-            fontSize: '14px'
+            fontSize: '14px',
+            maxWidth: '90%',
+            textAlign: 'center'
           }}>
             <Info size={18} /> {error}
           </div>

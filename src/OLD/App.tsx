@@ -371,14 +371,22 @@ const App: React.FC = () => {
   const handleImageGeneration = async (prompt: string, isSelfie: boolean = false): Promise<string | null> => {
     if (!aiRef.current) return null;
     
-    // 1. Lanciamo la promessa di generazione SUBITO (in background)
-    // Così l'immagine si carica mentre l'IA parla, guadagnando tempo.
+    // Costruiamo la descrizione fisica FISSA dell'avatar
+    const avatarDescription = `a ${config.age} years old ${config.gender === 'Donna' ? 'woman' : config.gender === 'Uomo' ? 'man' : 'person'}, ${config.hairColor} hair, ${config.eyeColor} eyes, ${config.skinTone} skin, ${config.bodyType || 'normal'} build, ${config.physicalTraits || ''}`;
+
     let finalPrompt = prompt;
-    if (isSelfie && config.visualPrompt) {
-        finalPrompt = `Professional Medium shot, waist-up photograph of a friendly ${config.gender === 'Donna' ? 'woman' : config.gender === 'Uomo' ? 'man' : 'person'}, ${config.age} years old, ${config.hairColor} hair, ${config.eyeColor} eyes. ${config.visualPrompt}. ${prompt}. Photorealistic, warm smile, natural pose.`;
+
+    if (isSelfie) {
+        // --- MODIFICA FONDAMENTALE ---
+        // 1. Mettiamo PRIMA l'azione richiesta dall'utente (prompt) così ha la priorità sulla scena.
+        // 2. Aggiungiamo la descrizione fisica (avatarDescription) come soggetto obbligatorio.
+        // 3. Rimuoviamo "Professional Medium shot" e "Studio lighting" che rendevano le foto troppo statiche.
+        finalPrompt = `A photorealistic photo of ${avatarDescription} who is ${prompt}. 
+        Ensure the character matches the physical description exactly. 
+        High quality, 8k, natural lighting, candid shot.`;
     } else {
-        // Anche per le immagini non-selfie, se descrivono il personaggio, usiamo medium shot
-        finalPrompt = `Medium shot, cinematic photo. ${prompt}`;
+        // Per oggetti generici o altro
+        finalPrompt = `Cinematic photo, high quality. ${prompt}`;
     }
 
     const imageGenerationPromise = aiRef.current.models.generateImages({

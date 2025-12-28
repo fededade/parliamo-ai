@@ -20,11 +20,6 @@ export interface AssistantConfig {
   bodyType: string;
   physicalTraits: string;
   personality: string;
-  // Nuovi campi per personalità dropdown
-  temperament?: string;
-  sociality?: string;
-  mood?: string;
-  commStyle?: string;
   name: string;
   biography: string;
   visualPrompt: string;
