@@ -61,7 +61,7 @@ const AppLogo = ({ size = 48, className = "" }: { size?: number, className?: str
       <div className="relative h-full w-full bg-white/90 border border-white/50 rounded-[1rem] flex items-center justify-center overflow-hidden shadow-lg shadow-purple-200/40 backdrop-blur-sm">
         {!imgError ? (
            <img 
-             src="logo.png" 
+             src="/logo.png" 
              alt="Logo Confidente" 
              className="w-full h-full object-cover p-1"
              onError={() => setImgError(true)}
@@ -131,7 +131,7 @@ const App: React.FC = () => {
   const [audioVolume, setAudioVolume] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false);
-  const [showSidebar, setShowSidebar] = useState(false); // Per sidebar mobile
+  const [showSidebar, setShowSidebar] = useState(true); // Inizia visibile su mobile
 
   // Refs
   const inputAudioContextRef = useRef<AudioContext | null>(null);
@@ -630,10 +630,11 @@ REGOLE FONDAMENTALI:
     return (
         <div style={{
           minHeight: '100vh',
-          backgroundImage: "url('background.png')",
+          backgroundImage: "url('/background.png')",
           backgroundSize: 'cover',
           backgroundPosition: 'center',
           backgroundRepeat: 'no-repeat',
+          backgroundColor: '#f8fafc',
           position: 'relative',
           fontFamily: 'Outfit, sans-serif',
           color: '#1e293b'
@@ -673,10 +674,11 @@ REGOLE FONDAMENTALI:
                   text-align: center !important;
                 }
                 .config-left-column h1 {
-                  font-size: 36px !important;
+                  font-size: 32px !important;
                 }
                 .config-left-column p {
                   max-width: 100% !important;
+                  font-size: 15px !important;
                 }
                 .config-right-column {
                   width: 100% !important;
@@ -684,6 +686,7 @@ REGOLE FONDAMENTALI:
                 }
                 .config-form {
                   max-height: none !important;
+                  padding: 10px !important;
                 }
                 .config-grid-4 {
                   grid-template-columns: 1fr 1fr !important;
@@ -691,10 +694,16 @@ REGOLE FONDAMENTALI:
                 .personality-grid {
                   grid-template-columns: 1fr !important;
                 }
+                .desktop-only-badge {
+                  display: none !important;
+                }
               }
               @media (max-width: 480px) {
                 .config-grid-2, .config-grid-4 {
                   grid-template-columns: 1fr !important;
+                }
+                .config-left-column h1 {
+                  font-size: 28px !important;
                 }
               }
             `}</style>
@@ -728,7 +737,7 @@ REGOLE FONDAMENTALI:
                           boxShadow: '0 4px 24px rgba(147, 112, 219, 0.25)',
                           overflow: 'hidden'
                         }}>
-                          <img src="logo.png" alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                          <img src="/logo.png" alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                         </div>
                         <div>
                             <div style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em', color: '#64748b', textTransform: 'uppercase' }}>Progetto</div>
@@ -761,56 +770,22 @@ REGOLE FONDAMENTALI:
                         Configurami, dammi un volto e una voce, e parliamo di tutto ciò che ti passa per la testa.
                     </p>
 
-                    {/* Feature Badge - Cuore lampeggiante quando form è completo - CLICCABILE */}
-                    <button
-                      onClick={isFormComplete && !isGeneratingProfile ? handleConfigSubmit : undefined}
-                      disabled={!isFormComplete || isGeneratingProfile}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '16px',
-                        padding: '16px 24px 16px 16px',
-                        borderRadius: '16px',
-                        backgroundColor: isFormComplete ? 'rgba(147, 51, 234, 0.1)' : 'rgba(255,255,255,0.7)',
-                        border: isFormComplete ? '2px solid rgba(147, 51, 234, 0.5)' : '1px solid rgba(255,255,255,0.8)',
-                        backdropFilter: 'blur(8px)',
-                        width: 'fit-content',
-                        transition: 'all 0.3s ease',
-                        boxShadow: isFormComplete ? '0 0 20px rgba(147, 51, 234, 0.3)' : 'none',
-                        cursor: isFormComplete && !isGeneratingProfile ? 'pointer' : 'default',
-                        outline: 'none'
-                      }}>
-                        <div style={{
-                          width: '40px',
-                          height: '40px',
-                          borderRadius: '50%',
-                          backgroundColor: isFormComplete ? '#9333ea' : '#f3e8ff',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: isFormComplete ? 'white' : '#9333ea',
-                          animation: isFormComplete && !isGeneratingProfile ? 'heartPulse 1s ease-in-out infinite' : 'none',
-                          boxShadow: isFormComplete ? '0 0 15px rgba(147, 51, 234, 0.6)' : 'none'
-                        }}>
-                            {isGeneratingProfile ? <Loader2 className="animate-spin" size={20} /> : <Heart fill="currentColor" size={20} />}
-                        </div>
-                        <span style={{ fontWeight: 600, color: isFormComplete ? '#9333ea' : '#334155' }}>
-                          {isGeneratingProfile ? (loadingStep || 'Creazione...') : (isFormComplete ? 'Pronto! Clicca per creare!' : 'Compila tutti i campi')}
-                        </span>
-                    </button>
-                    
-                    {/* Spacer */}
-                    <div style={{ flex: 1 }} />
-                    
-                    {/* Copyright */}
-                    <div style={{
-                      marginTop: '40px',
-                      fontSize: '10px',
-                      fontWeight: 500,
-                      color: '#94a3b8',
-                      letterSpacing: '0.05em'
+                    {/* Info badge semplice - solo su desktop */}
+                    <div className="desktop-only-badge" style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '12px 20px',
+                      borderRadius: '12px',
+                      backgroundColor: 'rgba(255,255,255,0.7)',
+                      border: '1px solid rgba(255,255,255,0.8)',
+                      backdropFilter: 'blur(8px)',
+                      width: 'fit-content'
                     }}>
-                        © Copyright Effetre Properties IA Division 2025 - All rights reserved
+                        <Heart fill="#9333ea" size={18} style={{ color: '#9333ea' }} />
+                        <span style={{ fontWeight: 500, color: '#64748b', fontSize: '14px' }}>
+                          Ascolto Attivo 24/7
+                        </span>
                     </div>
                 </div>
 
@@ -1143,15 +1118,55 @@ REGOLE FONDAMENTALI:
                             </div>
                         </div>
 
-                        {/* Messaggio per mobile - indica di cliccare sul badge */}
+                        {/* PULSANTE CREAZIONE - Alla fine del form */}
+                        <button
+                          onClick={isFormComplete && !isGeneratingProfile ? handleConfigSubmit : undefined}
+                          disabled={!isFormComplete || isGeneratingProfile}
+                          style={{
+                            width: '100%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '16px',
+                            padding: '20px 24px',
+                            borderRadius: '16px',
+                            backgroundColor: isFormComplete ? '#9333ea' : '#e2e8f0',
+                            border: 'none',
+                            transition: 'all 0.3s ease',
+                            boxShadow: isFormComplete ? '0 8px 24px rgba(147, 51, 234, 0.3)' : 'none',
+                            cursor: isFormComplete && !isGeneratingProfile ? 'pointer' : 'not-allowed',
+                            outline: 'none',
+                            marginTop: '8px'
+                          }}>
+                            <div style={{
+                              width: '36px',
+                              height: '36px',
+                              borderRadius: '50%',
+                              backgroundColor: 'rgba(255,255,255,0.2)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: 'white',
+                              animation: isFormComplete && !isGeneratingProfile ? 'heartPulse 1s ease-in-out infinite' : 'none'
+                            }}>
+                                {isGeneratingProfile ? <Loader2 className="animate-spin" size={20} /> : <Heart fill="currentColor" size={20} />}
+                            </div>
+                            <span style={{ fontWeight: 700, color: 'white', fontSize: '16px' }}>
+                              {isGeneratingProfile ? (loadingStep || 'Creazione in corso...') : (isFormComplete ? 'Crea il tuo Confidente' : 'Compila tutti i campi')}
+                            </span>
+                        </button>
+                        
+                        {/* Copyright - Alla fine */}
                         <div style={{
+                          marginTop: '24px',
                           textAlign: 'center',
-                          padding: '16px',
-                          color: '#64748b',
-                          fontSize: '13px',
-                          fontWeight: 500
+                          fontSize: '10px',
+                          fontWeight: 500,
+                          color: '#94a3b8',
+                          letterSpacing: '0.05em',
+                          paddingBottom: '20px'
                         }}>
-                          {isFormComplete ? '👆 Clicca sul cuore pulsante per creare il tuo Confidente' : 'Compila tutti i campi per continuare'}
+                            © Copyright Effetre Properties IA Division 2025 - All rights reserved
                         </div>
                     </div>
                 </div>
@@ -1167,9 +1182,10 @@ REGOLE FONDAMENTALI:
       flexDirection: 'row',
       height: '100vh',
       width: '100%',
-      backgroundImage: "url('background.png')",
+      backgroundImage: "url('/background.png')",
       backgroundSize: 'cover',
       backgroundPosition: 'center',
+      backgroundColor: '#f8fafc',
       position: 'relative',
       fontFamily: 'Outfit, sans-serif',
       color: '#1e293b',
@@ -1209,6 +1225,27 @@ REGOLE FONDAMENTALI:
           }
           .chat-main {
             width: 100% !important;
+          }
+          .chat-visualizer-area {
+            padding: 6px 12px !important;
+            gap: 8px !important;
+          }
+          .chat-visualizer-area .visualizer-wrapper {
+            transform: scale(0.35) !important;
+          }
+          .chat-visualizer-area p {
+            font-size: 9px !important;
+          }
+          .chat-transcript {
+            padding: 12px !important;
+            gap: 10px !important;
+          }
+          .chat-footer {
+            padding: 8px 12px !important;
+          }
+          .chat-footer button {
+            padding: 8px 14px !important;
+            font-size: 12px !important;
           }
         }
         @media (min-width: 769px) {
@@ -1285,7 +1322,7 @@ REGOLE FONDAMENTALI:
             overflow: 'hidden',
             flexShrink: 0
           }}>
-            <img src="logo.png" alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            <img src="/logo.png" alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
           </div>
           <div>
             <div style={{ fontSize: '8px', fontWeight: 700, letterSpacing: '0.15em', color: '#64748b', textTransform: 'uppercase' }}>Progetto</div>
@@ -1508,10 +1545,10 @@ REGOLE FONDAMENTALI:
         backgroundColor: 'rgba(255,255,255,0.3)'
       }}>
         
-        {/* Mobile Menu Button */}
+        {/* Mobile Menu Button - Mostra sidebar quando nascosta */}
         <button
           className="mobile-menu-btn"
-          onClick={() => setShowSidebar(true)}
+          onClick={() => setShowSidebar(!showSidebar)}
           style={{
             position: 'absolute',
             top: '10px',
@@ -1557,7 +1594,7 @@ REGOLE FONDAMENTALI:
         )}
 
         {/* Central Visualizer Area - MOLTO COMPATTO */}
-        <div style={{
+        <div className="chat-visualizer-area" style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -1567,7 +1604,7 @@ REGOLE FONDAMENTALI:
           borderBottom: '1px solid rgba(226,232,240,0.4)',
           backgroundColor: 'rgba(255,255,255,0.4)'
         }}>
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', transform: 'scale(0.5)' }}>
+          <div className="visualizer-wrapper" style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', transform: 'scale(0.5)' }}>
             <AudioVisualizer isPlaying={isConnected} volume={audioVolume} />
             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
               {isConnected ? (
@@ -1600,6 +1637,7 @@ REGOLE FONDAMENTALI:
         {/* Transcript Area */}
         <div 
           ref={transcriptRef}
+          className="chat-transcript"
           style={{
             flex: 1,
             overflowY: 'auto',
@@ -1751,7 +1789,7 @@ REGOLE FONDAMENTALI:
         </div>
 
         {/* Input Area per foto + Footer */}
-        <div style={{
+        <div className="chat-footer" style={{
           borderTop: '1px solid rgba(226,232,240,0.5)',
           backgroundColor: 'rgba(255,255,255,0.7)',
           backdropFilter: 'blur(8px)'
