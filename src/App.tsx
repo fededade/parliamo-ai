@@ -3,11 +3,11 @@ import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type, To
 import { TranscriptItem, AssistantConfig } from './types';
 import { createBlob, decode, decodeAudioData } from './utils/audio';
 import { AudioVisualizer } from './components/AudioVisualizer';
-import { Mic, MicOff, PhoneOff, User, Bot, Sparkles, Image as ImageIcon, ArrowRight, Loader2, Heart, Info, Mail, MessageCircle, ExternalLink, Download, Wand2, UserCircle, Sliders, Music2, Menu } from 'lucide-react';
+import { Mic, MicOff, PhoneOff, User, Bot, Sparkles, Image as ImageIcon, ArrowRight, Loader2, Heart, Info, Mail, MessageCircle, ExternalLink, Download, Wand2, UserCircle, Sliders, Music2, Menu, Camera } from 'lucide-react';
 
 const LIVE_MODEL_NAME = 'gemini-2.5-flash-native-audio-preview-09-2025';
-const IMAGE_MODEL_NAME = 'gemini-2.5-flash-image';
-const TEXT_MODEL_NAME = 'gemini-3-flash-preview';
+const IMAGE_MODEL_NAME = 'imagen-4.0-generate-001	';
+const TEXT_MODEL_NAME = 'gemini-2.0-flash';
 
 // --- TOOLS DEFINITION ---
 const generateImageTool: FunctionDeclaration = {
@@ -52,24 +52,24 @@ const sendWhatsappTool: FunctionDeclaration = {
 
 const allTools: Tool[] = [{ functionDeclarations: [generateImageTool, sendEmailTool, sendWhatsappTool] }];
 
-// --- BRANDING COMPONENT (Updated to match photo style) ---
+// --- BRANDING COMPONENT (Updated to match Confidente style) ---
 const AppLogo = ({ size = 48, className = "" }: { size?: number, className?: string }) => {
   const [imgError, setImgError] = useState(false);
 
   return (
     <div className={`relative ${className}`} style={{ width: size, height: size }}>
-      <div className="relative h-full w-full bg-white border border-slate-100 rounded-[1.2rem] flex items-center justify-center overflow-hidden shadow-lg shadow-purple-100">
+      <div className="relative h-full w-full bg-white/90 border border-white/50 rounded-[1rem] flex items-center justify-center overflow-hidden shadow-lg shadow-purple-200/40 backdrop-blur-sm">
         {!imgError ? (
            <img 
              src="logo.png" 
-             alt="Logo" 
-             className="w-full h-full object-cover"
+             alt="Logo Confidente" 
+             className="w-full h-full object-cover p-1"
              onError={() => setImgError(true)}
            />
         ) : (
-          <div className="relative z-10 flex items-center justify-center p-2">
-            <Heart size={size * 0.6} className="text-purple-400 fill-purple-400 absolute left-2 opacity-90" />
-            <Heart size={size * 0.6} className="text-amber-400 fill-amber-400 absolute right-2 top-2 opacity-90 mix-blend-multiply" />
+          <div className="relative z-10 flex items-center justify-center w-full h-full">
+            <Heart size={size * 0.45} className="text-purple-400 fill-purple-400 absolute left-[15%] top-[25%] opacity-95" />
+            <Heart size={size * 0.45} className="text-amber-400 fill-amber-400 absolute right-[15%] top-[35%] opacity-95" />
           </div>
         )}
       </div>
@@ -86,18 +86,31 @@ const App: React.FC = () => {
     hairColor: 'Castani',
     eyeColor: 'Verdi',
     skinTone: 'Chiara',
-    physicalTraits: 'Sorriso gentile, occhiali eleganti',
+    bodyType: 'Normale',
+    physicalTraits: 'Sorriso gentile',
     personality: 'Empatica, calma, saggia, buona ascoltatrice',
     name: '',
     biography: '',
     visualPrompt: '',
     voicePitch: 0,
     voiceSpeed: 1.0,
+    voiceEnergy: 50,
+    voiceTone: 50,
   });
   const [isConfigured, setIsConfigured] = useState(false);
   const [isGeneratingProfile, setIsGeneratingProfile] = useState(false);
   const [loadingStep, setLoadingStep] = useState<string>('');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  
+  // Check if all required fields are filled for the pulsing heart
+  const isFormComplete = config.userName.trim() !== '' && 
+                         config.gender !== '' && 
+                         config.age !== '' && 
+                         config.hairColor !== '' && 
+                         config.eyeColor !== '' && 
+                         config.skinTone !== '' &&
+                         config.bodyType !== '' &&
+                         config.personality !== '';
 
   // App State
   const [isConnected, setIsConnected] = useState(false);
@@ -105,6 +118,7 @@ const App: React.FC = () => {
   const [transcripts, setTranscripts] = useState<TranscriptItem[]>([]);
   const [audioVolume, setAudioVolume] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false);
 
   // Refs
   const inputAudioContextRef = useRef<AudioContext | null>(null);
@@ -117,6 +131,7 @@ const App: React.FC = () => {
   const sessionPromiseRef = useRef<Promise<any> | null>(null);
   const currentInputTransRef = useRef('');
   const currentOutputTransRef = useRef('');
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     // VERCEL FIX: Defensive API Key retrieval
@@ -180,6 +195,103 @@ const App: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  // Funzione per gestire l'upload di foto da parte dell'utente
+  const handleUserPhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !aiRef.current) return;
+
+    setIsAnalyzingPhoto(true);
+    
+    try {
+      // Converti l'immagine in base64
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const base64Data = e.target?.result as string;
+        
+        // Aggiungi l'immagine dell'utente alla chat
+        const userImageId = Date.now().toString();
+        addTranscript({
+          id: userImageId,
+          sender: 'user',
+          type: 'image',
+          image: base64Data,
+          isComplete: true
+        });
+
+        try {
+          // Chiedi all'IA di commentare l'immagine
+          const imageAnalysisPrompt = `Sei ${config.name}, un amico empatico e curioso. L'utente ${config.userName} ti ha appena inviato una foto. 
+          Analizza l'immagine e rispondi in modo amichevole e caloroso. 
+          Fai commenti positivi su quello che vedi, mostra interesse genuino e fai 1-2 domande per stimolare la conversazione.
+          Sii naturale e colloquiale, come un vero amico. Rispondi in italiano, max 2-3 frasi.`;
+
+          const response = await aiRef.current!.models.generateContent({
+            model: TEXT_MODEL_NAME,
+            contents: [
+              {
+                role: 'user',
+                parts: [
+                  { text: imageAnalysisPrompt },
+                  { 
+                    inlineData: {
+                      mimeType: file.type,
+                      data: base64Data.split(',')[1]
+                    }
+                  }
+                ]
+              }
+            ]
+          });
+
+          const aiComment = response.text || "Che bella foto! Raccontami di più!";
+          
+          // Aggiungi alla chat
+          addTranscript({
+            id: (Date.now() + 1).toString(),
+            sender: 'model',
+            type: 'text',
+            text: aiComment,
+            isComplete: true
+          });
+          
+          // Se la sessione live è attiva, invia il testo per farlo pronunciare dall'IA
+          if (isConnected && sessionPromiseRef.current) {
+            try {
+              const session = await sessionPromiseRef.current;
+              // Invia un messaggio di testo alla sessione per farlo leggere con la voce dell'assistente
+              session.sendClientContent({ turns: [{ role: 'user', parts: [{ text: `Leggi ad alta voce questo commento che hai appena scritto sulla foto: "${aiComment}"` }] }] });
+            } catch (e) {
+              console.log('Sessione non disponibile per TTS');
+            }
+          }
+
+        } catch (err) {
+          console.error('Errore analisi foto:', err);
+          const fallbackText = "Che bella foto! Mi piacerebbe saperne di più. Cosa stavi facendo in quel momento?";
+          addTranscript({
+            id: (Date.now() + 1).toString(),
+            sender: 'model',
+            type: 'text',
+            text: fallbackText,
+            isComplete: true
+          });
+        }
+        
+        setIsAnalyzingPhoto(false);
+      };
+      
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Errore upload foto:', err);
+      setIsAnalyzingPhoto(false);
+    }
+    
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const handleConfigSubmit = async () => {
     if (!aiRef.current) {
         setError("API Key mancante. Configura VITE_API_KEY su Vercel.");
@@ -190,12 +302,12 @@ const App: React.FC = () => {
 
     try {
         const hasManualName = config.name && config.name.trim().length > 0;
-        setLoadingStep(hasManualName ? `Sto definendo la personalità di ${config.name}...` : 'Sto creando il tuo amico ideale...');
+        setLoadingStep(hasManualName ? `Sto definendo la personalità di ${config.name}...` : 'Sto creando il tuo  amico ideale...');
         
-        const basePrompt = `Crea un profilo per un COMPAGNO UMANO: Genere ${config.gender}, Età ${config.age}, Capelli ${config.hairColor}, Occhi ${config.eyeColor}, Pelle ${config.skinTone}, Tratti ${config.physicalTraits}, Personalità ${config.personality}.`;
-        const nameInstruction = hasManualName ? `Il nome è "${config.name}".` : `Inventa un nome.`;
+        const basePrompt = `Crea un profilo per un COMPAGNO UMANO: Genere ${config.gender}, Età ${config.age}, Capelli ${config.hairColor}, Occhi ${config.eyeColor}, Pelle ${config.skinTone}, Corporatura ${config.bodyType || 'Normale'}, Caratteristiche fisiche: ${config.physicalTraits}, Personalità ${config.personality}.`;
+        const nameInstruction = hasManualName ? `Il nome è "${config.name}".` : `Inventa un nome italiano creativo.`;
 
-        const profilePrompt = `${basePrompt} ${nameInstruction} Rispondi JSON: {name, biography, visualPrompt}`;
+        const profilePrompt = `${basePrompt} ${nameInstruction} Rispondi JSON: {name, biography, visualPrompt}. La biography deve includere hobby, studi, esperienze. Il visualPrompt deve essere dettagliato per generare un ritratto fotorealistico.`;
         
         const textResponse = await aiRef.current.models.generateContent({
             model: TEXT_MODEL_NAME,
@@ -209,20 +321,41 @@ const App: React.FC = () => {
         setConfig(prev => ({ ...prev, name: profileData.name, biography: profileData.biography, visualPrompt: profileData.visualPrompt }));
         setLoadingStep(`Sto scattando una foto a ${profileData.name}...`);
         
-        const imageResponse = await aiRef.current.models.generateContent({
-            model: IMAGE_MODEL_NAME,
-            contents: { parts: [{ text: "Close-up portrait, 8k, photorealistic, cinematic lighting, " + profileData.visualPrompt }] },
-        });
-
         let foundUrl: string | null = null;
-        if (imageResponse.candidates?.[0]?.content?.parts) {
-            for (const part of imageResponse.candidates[0].content.parts) {
-                if (part.inlineData) {
-                    foundUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-                    break;
+        
+        try {
+            const imagePrompt = `Professional Medium shot, waist-up portrait of a friendly ${config.gender === 'Donna' ? 'woman' : config.gender === 'Uomo' ? 'man' : 'person'}, ${config.age} years old, ${config.hairColor} hair, ${config.eyeColor} eyes, ${config.skinTone} skin, ${config.bodyType || 'normal'} build, ${config.physicalTraits || 'warm smile'}. Half-body shot, 8k resolution, photorealistic, soft studio lighting, warm friendly expression. ${profileData.visualPrompt}`;
+            
+            console.log('Generating image with imagen-4.0-generate-001:', imagePrompt);
+            
+            const imageResponse = await aiRef.current.models.generateImages({
+                model: IMAGE_MODEL_NAME,
+                prompt: imagePrompt,
+                config: {
+                    numberOfImages: 1,
+                    outputMimeType: 'image/jpeg',
+                    aspectRatio: '4:3'
+                }
+            });
+
+            console.log('Risposta Imagen:', imageResponse);
+
+            if (imageResponse.generatedImages && imageResponse.generatedImages.length > 0) {
+                const img = imageResponse.generatedImages[0];
+                if (img.image?.imageBytes) {
+                    foundUrl = `data:image/jpeg;base64,${img.image.imageBytes}`;
+                    console.log('Avatar generato con successo!');
                 }
             }
+            
+            if (!foundUrl) {
+                console.warn('Nessuna immagine nella risposta Imagen');
+            }
+        } catch (imgError: any) {
+            console.error('Errore generazione immagine avatar:', imgError.message || imgError);
+            // Continua senza avatar
         }
+        
         setAvatarUrl(foundUrl);
         setIsConfigured(true);
     } catch (e: any) {
@@ -235,36 +368,64 @@ const App: React.FC = () => {
 
   const handleImageGeneration = async (prompt: string, isSelfie: boolean = false): Promise<string | null> => {
     if (!aiRef.current) return null;
+    
+    // 1. Lanciamo la promessa di generazione SUBITO (in background)
+    // Così l'immagine si carica mentre l'IA parla, guadagnando tempo.
+    let finalPrompt = prompt;
+    if (isSelfie && config.visualPrompt) {
+        finalPrompt = `Professional Medium shot, waist-up photograph of a friendly ${config.gender === 'Donna' ? 'woman' : config.gender === 'Uomo' ? 'man' : 'person'}, ${config.age} years old, ${config.hairColor} hair, ${config.eyeColor} eyes. ${config.visualPrompt}. ${prompt}. Photorealistic, warm smile, natural pose.`;
+    } else {
+        // Anche per le immagini non-selfie, se descrivono il personaggio, usiamo medium shot
+        finalPrompt = `Medium shot, cinematic photo. ${prompt}`;
+    }
+
+    const imageGenerationPromise = aiRef.current.models.generateImages({
+        model: IMAGE_MODEL_NAME,
+        prompt: finalPrompt,
+        config: {
+            numberOfImages: 1,
+            outputMimeType: 'image/jpeg',
+            // MODIFICA FORMATO:
+            // '4:3' = Orizzontale (Landscape) -> Soddisfa "non in formato ritratto"
+            // '3:4' = Verticale (Formato telefono)
+            // '1:1' = Quadrato
+            aspectRatio: '3:4'
+        }
+    });
+
     try {
-        addTranscript({ sender: 'model', type: 'text', text: isSelfie ? `📸 Un attimo, mi metto in posa...` : `🎨 Sto disegnando: "${prompt}"...`, isComplete: true });
-        
-        let finalPrompt = prompt;
-        if (isSelfie && config.visualPrompt) {
-            finalPrompt = `PHOTOREALISTIC RAW PHOTO, 8k. SUBJECT: ${config.visualPrompt}. ACTION: ${prompt}. STYLE: Authentic.`;
+        if (isSelfie) {
+            // 2. SIMULAZIONE TEMPO SCENICO
+            // Aggiungiamo un messaggio visivo immediato
+            addTranscript({ sender: 'model', type: 'text', text: `📸 *Prende il telefono e si mette in posa...*`, isComplete: true });
+            
+            // 3. IL TRUCCO: Aspettiamo 4 secondi TASSATIVI mentre l'audio (la voce) sta andando.
+            // Questo permette all'IA di dire "Ehm... aspetta... click!" PRIMA che appaia la foto.
+            await new Promise(resolve => setTimeout(resolve, 4000));
+        } else {
+            addTranscript({ sender: 'model', type: 'text', text: `🎨 Genero l'immagine: "${prompt}"`, isComplete: true });
         }
 
-        const response = await aiRef.current.models.generateContent({
-            model: IMAGE_MODEL_NAME,
-            contents: { parts: [{ text: finalPrompt }] },
-        });
+        // 4. Ora aspettiamo che l'immagine sia pronta (se ci ha messo meno di 4s, è già pronta)
+        const response = await imageGenerationPromise;
 
         let imageUrl: string | null = null;
-        if (response.candidates?.[0]?.content?.parts) {
-            for (const part of response.candidates[0].content.parts) {
-                if (part.inlineData) {
-                    imageUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-                    break;
-                }
+        if (response.generatedImages && response.generatedImages.length > 0) {
+            const img = response.generatedImages[0];
+            if (img.image?.imageBytes) {
+                imageUrl = `data:image/jpeg;base64,${img.image.imageBytes}`;
             }
         }
         
         if (imageUrl) {
+            // 5. SOLO ORA mostriamo l'immagine
             addTranscript({ sender: 'model', type: 'image', image: imageUrl, isComplete: true });
-            return "Foto scattata.";
+            return isSelfie ? "Foto inviata!" : "Ecco l'immagine.";
         }
-        return "Errore fotocamera.";
-    } catch (e) {
-        return "Errore tecnico.";
+        return "Errore nella generazione.";
+    } catch (e: any) {
+        console.error('Errore generazione immagine:', e.message || e);
+        return "Mi sa che la cazzo di fotocamera non funziona bene oggi...";
     }
   };
 
@@ -297,7 +458,15 @@ const App: React.FC = () => {
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: selectedVoiceName } } },
-          systemInstruction: `Sei ${config.name}, amico di ${config.userName}. Personalità: ${config.personality}. Bio: ${config.biography}. Sii naturale, empatico. Non dire di essere un'AI.`,
+          systemInstruction: `Sei ${config.name}, amico/a di ${config.userName}. Personalità: ${config.personality}. Bio: ${config.biography}. 
+          
+REGOLE FONDAMENTALI:
+- Sii naturale, empatico, colloquiale. Non dire MAI di essere un'AI o un assistente virtuale.
+- Quando ${config.userName} ti chiede una TUA foto o un selfie, NON chiamare subito lo strumento. PRIMA devi parlare:reagisci con un po' di IMBARAZZO e timidezza, come farebbe una persona vera. Esempio: "Oh... una mia foto? Ehm, non so se vengo bene in foto..." poi dopo un attimo di esitazione accetta: "Va bene dai, aspetta che me la scatto... eccola!"
+- CHIAMA lo strumento 'generate_image' SOLO ALLA FINE della tua frase parlata.
+- L'ordine deve essere: [PARLATO DI IMBARAZZO] -> [CHIAMATA STRUMENTO].
+- Quando ${config.userName} ti invia una foto sua, commentala con entusiasmo e curiosità genuina, fai domande per saperne di più.
+- Parla sempre in italiano in modo naturale e amichevole.`,
           tools: allTools,
           inputAudioTranscription: {},
           outputAudioTranscription: {},
@@ -399,183 +568,459 @@ const App: React.FC = () => {
   // --- CONFIGURATION SCREEN (LIGHT THEME WATERCOLOR STYLE) ---
   if (!isConfigured) {
     return (
-        <div 
-          className="min-h-screen bg-[#FDFCF8] relative overflow-hidden font-sans text-slate-800 selection:bg-purple-200 bg-cover bg-center bg-no-repeat transition-all duration-700"
-          style={{ backgroundImage: "url('background.png')" }}
-        >
-            {/* Overlay for better readability if background is busy */}
-            <div className="absolute inset-0 bg-white/40 pointer-events-none" />
-
-            <div className="container mx-auto max-w-6xl p-6 md:p-8 relative z-10 flex flex-col lg:flex-row gap-12 h-full lg:h-screen lg:items-center">
+        <div style={{
+          minHeight: '100vh',
+          backgroundImage: "url('background.png')",
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          position: 'relative',
+          fontFamily: 'Outfit, sans-serif',
+          color: '#1e293b'
+        }}>
+            {/* CSS Animation for pulsing heart */}
+            <style>{`
+              @keyframes heartPulse {
+                0%, 100% { transform: scale(1); box-shadow: 0 0 15px rgba(147, 51, 234, 0.6); }
+                50% { transform: scale(1.15); box-shadow: 0 0 30px rgba(147, 51, 234, 0.9); }
+              }
+              input[type="range"]::-webkit-slider-thumb {
+                appearance: none;
+                width: 16px;
+                height: 16px;
+                border-radius: 50%;
+                background: #9333ea;
+                cursor: pointer;
+                box-shadow: 0 2px 6px rgba(147, 51, 234, 0.4);
+              }
+            `}</style>
+            {/* Main Container - Two Columns */}
+            <div style={{
+              maxWidth: '1200px',
+              margin: '0 auto',
+              padding: '40px',
+              position: 'relative',
+              zIndex: 10,
+              display: 'flex',
+              flexDirection: 'row',
+              gap: '60px',
+              minHeight: '100vh',
+              alignItems: 'center'
+            }}>
                 
-                {/* Left Side: Brand & Description */}
-                <div className="w-full lg:w-5/12 flex flex-col justify-center">
-                    <div className="flex items-center gap-4 mb-8">
-                        <AppLogo size={68} className="shadow-xl shadow-purple-100/50 rounded-[1.2rem]" />
-                        <div className="flex flex-col">
-                            <span className="text-[10px] font-bold tracking-[0.25em] text-slate-500 uppercase mb-1">Progetto</span>
-                            <span className="text-xl font-bold text-slate-800 tracking-tight leading-none">PARLIAMO</span>
+                {/* LEFT COLUMN: Brand & Description */}
+                <div style={{ flex: '0 0 420px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                    
+                    {/* Logo + Project Name - LOGO PIÙ GRANDE */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '32px' }}>
+                        <div style={{
+                          width: '80px',
+                          height: '80px',
+                          backgroundColor: 'rgba(255,255,255,0.95)',
+                          borderRadius: '16px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxShadow: '0 4px 24px rgba(147, 112, 219, 0.25)',
+                          overflow: 'hidden'
+                        }}>
+                          <img src="logo.png" alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        </div>
+                        <div>
+                            <div style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em', color: '#64748b', textTransform: 'uppercase' }}>Progetto</div>
+                            <div style={{ fontSize: '22px', fontWeight: 700, color: '#1e293b', letterSpacing: '-0.02em' }}>CONFIDENTE</div>
                         </div>
                     </div>
 
-                    <h1 className="text-5xl md:text-6xl font-bold text-slate-900 mb-6 leading-[1.1] tracking-tight">
-                        Parliamo...
+                    {/* Main Title */}
+                    <h1 style={{
+                      fontSize: '56px',
+                      fontWeight: 700,
+                      color: '#0f172a',
+                      marginBottom: '24px',
+                      lineHeight: 1.1,
+                      letterSpacing: '-0.02em'
+                    }}>
+                        Amico<br/>Confidente
                     </h1>
                     
-                    <p className="text-lg text-slate-700 font-medium leading-relaxed max-w-md mb-8">
+                    {/* Description */}
+                    <p style={{
+                      fontSize: '17px',
+                      color: '#475569',
+                      fontWeight: 500,
+                      lineHeight: 1.7,
+                      maxWidth: '380px',
+                      marginBottom: '32px'
+                    }}>
                         Sono qualcuno che ti ascolta davvero. 
                         Configurami, dammi un volto e una voce, e parliamo di tutto ciò che ti passa per la testa.
                     </p>
 
-                    {/* Feature Pill */}
-                    <div className="inline-flex items-center gap-4 p-4 pr-8 rounded-2xl bg-white/60 border border-white/80 shadow-sm backdrop-blur-md w-fit">
-                        <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center text-purple-600">
+                    {/* Feature Badge - Cuore lampeggiante quando form è completo */}
+                    <div style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '16px',
+                      padding: '16px 24px 16px 16px',
+                      borderRadius: '16px',
+                      backgroundColor: isFormComplete ? 'rgba(147, 51, 234, 0.1)' : 'rgba(255,255,255,0.7)',
+                      border: isFormComplete ? '2px solid rgba(147, 51, 234, 0.5)' : '1px solid rgba(255,255,255,0.8)',
+                      backdropFilter: 'blur(8px)',
+                      width: 'fit-content',
+                      transition: 'all 0.3s ease',
+                      boxShadow: isFormComplete ? '0 0 20px rgba(147, 51, 234, 0.3)' : 'none'
+                    }}>
+                        <div style={{
+                          width: '40px',
+                          height: '40px',
+                          borderRadius: '50%',
+                          backgroundColor: isFormComplete ? '#9333ea' : '#f3e8ff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: isFormComplete ? 'white' : '#9333ea',
+                          animation: isFormComplete ? 'heartPulse 1s ease-in-out infinite' : 'none',
+                          boxShadow: isFormComplete ? '0 0 15px rgba(147, 51, 234, 0.6)' : 'none'
+                        }}>
                             <Heart fill="currentColor" size={20} />
                         </div>
-                        <span className="font-semibold text-slate-700">Ascolto Attivo</span>
+                        <span style={{ fontWeight: 600, color: isFormComplete ? '#9333ea' : '#334155' }}>
+                          {isFormComplete ? 'Pronto! Creiamo il tuo amico!' : 'Ascolto Attivo'}
+                        </span>
+                    </div>
+                    
+                    {/* Spacer */}
+                    <div style={{ flex: 1 }} />
+                    
+                    {/* Copyright */}
+                    <div style={{
+                      marginTop: '40px',
+                      fontSize: '10px',
+                      fontWeight: 500,
+                      color: '#94a3b8',
+                      letterSpacing: '0.05em'
+                    }}>
+                        © Copyright Effetre Properties IA Division 2025 - All rights reserved
                     </div>
                 </div>
 
-                {/* Right Side: Configuration Form */}
-                <div className="w-full lg:w-7/12">
-                    <div className="bg-white/40 backdrop-blur-sm rounded-[2rem] border border-white/60 shadow-xl shadow-purple-100/30 p-1">
-                        <div className="bg-white/50 rounded-[1.8rem] p-6 md:p-10 max-h-[85vh] overflow-y-auto custom-scrollbar">
-                            
-                            {error && (
-                                <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm flex items-center gap-2">
-                                    <Info size={16} /> {error}
-                                </div>
-                            )}
+                {/* RIGHT COLUMN: Configuration Form - TRASPARENTE */}
+                <div style={{ flex: 1, maxWidth: '650px' }}>
+                    {/* Form SENZA box bianco - completamente trasparente */}
+                    <div style={{
+                      padding: '20px',
+                      maxHeight: '85vh',
+                      overflowY: 'auto'
+                    }}>
+                        
+                        {error && (
+                            <div style={{ marginBottom: '24px', padding: '16px', backgroundColor: 'rgba(254,242,242,0.9)', border: '1px solid #fecaca', borderRadius: '12px', color: '#dc2626', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Info size={16} /> {error}
+                            </div>
+                        )}
 
-                            <div className="space-y-10">
-                                {/* Section 1 */}
-                                <div>
-                                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-4">
-                                        <User size={20} className="text-slate-400"/> Chi sei tu?
-                                    </h3>
-                                    <div>
-                                        <label className="block text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-2 ml-1">Il tuo Nome</label>
-                                        <input 
-                                            className="w-full bg-slate-100/80 border border-slate-200 focus:border-purple-300 focus:bg-white focus:ring-4 focus:ring-purple-100/50 rounded-2xl px-5 py-4 text-slate-800 placeholder-slate-400 outline-none transition-all font-medium"
-                                            placeholder="Come vuoi che ti chiami?"
-                                            value={config.userName}
-                                            onChange={(e) => setConfig({...config, userName: e.target.value})}
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* Section 2 */}
-                                <div>
-                                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-4">
-                                        <Bot size={20} className="text-amber-500"/> Il tuo Confidente
-                                    </h3>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
-                                        <div>
-                                            <label className="block text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-2 ml-1">Genere Assistente</label>
-                                            <div className="relative">
-                                                <select 
-                                                    className="w-full bg-slate-100/80 border border-slate-200 focus:border-purple-300 focus:bg-white focus:ring-4 focus:ring-purple-100/50 rounded-2xl px-5 py-4 text-slate-800 appearance-none outline-none cursor-pointer font-medium"
-                                                    value={config.gender}
-                                                    onChange={(e) => setConfig({...config, gender: e.target.value})}
-                                                >
-                                                    <option>Uomo</option>
-                                                    <option>Donna</option>
-                                                    <option>Non-binary</option>
-                                                </select>
-                                                <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">▼</div>
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <label className="block text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-2 ml-1">Età Apparente</label>
-                                            <input 
-                                                type="number"
-                                                className="w-full bg-slate-100/80 border border-slate-200 focus:border-purple-300 focus:bg-white focus:ring-4 focus:ring-purple-100/50 rounded-2xl px-5 py-4 text-slate-800 outline-none font-medium"
-                                                value={config.age}
-                                                onChange={(e) => setConfig({...config, age: e.target.value})}
-                                            />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-2 ml-1">Nome Assistente (Opzionale)</label>
-                                        <input 
-                                            className="w-full bg-slate-100/80 border border-slate-200 focus:border-purple-300 focus:bg-white focus:ring-4 focus:ring-purple-100/50 rounded-2xl px-5 py-4 text-slate-800 placeholder-slate-400 outline-none transition-all font-medium"
-                                            placeholder="Lascia vuoto per generare automaticamente"
-                                            value={config.name}
-                                            onChange={(e) => setConfig({...config, name: e.target.value})}
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* Voice Modulation */}
-                                <div className="bg-purple-50/50 rounded-2xl p-5 border border-purple-100/50">
-                                    <h4 className="text-purple-800 text-xs uppercase tracking-wider font-bold mb-4 flex items-center gap-2">
-                                        <Sliders size={14} className="text-purple-500" /> Modulazione Vocale
-                                    </h4>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                        <div>
-                                            <label className="flex justify-between text-slate-500 text-xs font-semibold mb-3">
-                                                <span>Tonalità</span>
-                                                <span className="text-purple-600 bg-purple-100 px-2 py-0.5 rounded text-[10px]">{config.voicePitch || 0}</span>
-                                            </label>
-                                            <input type="range" min="-200" max="200" step="10" value={config.voicePitch || 0} onChange={(e) => setConfig({...config, voicePitch: parseInt(e.target.value)})} className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-purple-500" />
-                                        </div>
-                                        <div>
-                                            <label className="flex justify-between text-slate-500 text-xs font-semibold mb-3">
-                                                <span>Velocità</span>
-                                                <span className="text-purple-600 bg-purple-100 px-2 py-0.5 rounded text-[10px]">x{config.voiceSpeed || 1.0}</span>
-                                            </label>
-                                            <input type="range" min="0.85" max="1.15" step="0.05" value={config.voiceSpeed || 1.0} onChange={(e) => setConfig({...config, voiceSpeed: parseFloat(e.target.value)})} className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-500" />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Section 3 */}
-                                <div>
-                                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-4">
-                                        <Wand2 size={20} className="text-slate-400"/> Dettagli
-                                    </h3>
-                                    <div className="grid grid-cols-3 gap-3 mb-5">
-                                        <div>
-                                            <label className="block text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-2 ml-1">Capelli</label>
-                                            <input className="w-full bg-slate-100/80 border border-slate-200 focus:bg-white focus:ring-2 focus:ring-purple-100 rounded-xl px-4 py-3 text-slate-800 text-sm outline-none font-medium" placeholder="Castani" value={config.hairColor} onChange={(e) => setConfig({...config, hairColor: e.target.value})} />
-                                        </div>
-                                        <div>
-                                            <label className="block text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-2 ml-1">Occhi</label>
-                                            <input className="w-full bg-slate-100/80 border border-slate-200 focus:bg-white focus:ring-2 focus:ring-purple-100 rounded-xl px-4 py-3 text-slate-800 text-sm outline-none font-medium" placeholder="Verdi" value={config.eyeColor} onChange={(e) => setConfig({...config, eyeColor: e.target.value})} />
-                                        </div>
-                                        <div>
-                                            <label className="block text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-2 ml-1">Pelle</label>
-                                            <input className="w-full bg-slate-100/80 border border-slate-200 focus:bg-white focus:ring-2 focus:ring-purple-100 rounded-xl px-4 py-3 text-slate-800 text-sm outline-none font-medium" placeholder="Chiara" value={config.skinTone} onChange={(e) => setConfig({...config, skinTone: e.target.value})} />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-2 ml-1">Carattere & Personalità</label>
-                                        <textarea 
-                                            className="w-full bg-slate-100/80 border border-slate-200 focus:border-purple-300 focus:bg-white focus:ring-4 focus:ring-purple-100/50 rounded-2xl p-5 text-slate-800 h-24 resize-none outline-none font-medium leading-relaxed"
-                                            placeholder="Descrivi come si comporta..."
-                                            value={config.personality}
-                                            onChange={(e) => setConfig({...config, personality: e.target.value})}
-                                        />
-                                    </div>
-                                </div>
-
-                                <button 
-                                    onClick={handleConfigSubmit}
-                                    disabled={isGeneratingProfile}
-                                    className="w-full bg-slate-900 hover:bg-slate-800 text-white py-5 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 transition-all transform hover:scale-[1.01] active:scale-[0.99] shadow-xl shadow-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {isGeneratingProfile ? (
-                                        <>
-                                            <Loader2 className="animate-spin" /> {loadingStep || 'Creazione in corso...'}
-                                        </>
-                                    ) : (
-                                        <>
-                                            Crea il tuo Amico <ArrowRight />
-                                        </>
-                                    )}
-                                </button>
+                        {/* Section 1: Chi sei tu? */}
+                        <div style={{ marginBottom: '28px' }}>
+                            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                                <User size={20} style={{ color: '#94a3b8' }}/> Chi sei tu?
+                            </h3>
+                            <div>
+                                <label style={{ display: 'block', color: '#64748b', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>Il tuo Nome</label>
+                                <input 
+                                    style={{
+                                      width: '100%',
+                                      backgroundColor: 'rgba(255,255,255,0.75)',
+                                      border: '1px solid rgba(226,232,240,0.6)',
+                                      borderRadius: '16px',
+                                      padding: '16px 20px',
+                                      fontSize: '15px',
+                                      color: '#1e293b',
+                                      outline: 'none',
+                                      fontWeight: 500,
+                                      boxSizing: 'border-box',
+                                      backdropFilter: 'blur(4px)'
+                                    }}
+                                    placeholder="Come vuoi che ti chiami?"
+                                    value={config.userName}
+                                    onChange={(e) => setConfig({...config, userName: e.target.value})}
+                                />
                             </div>
                         </div>
+
+                        {/* Section 2: Il tuo Confidente */}
+                        <div style={{ marginBottom: '28px' }}>
+                            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                                <Bot size={20} style={{ color: '#f59e0b' }}/> Il tuo Confidente
+                            </h3>
+                            
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                                <div>
+                                    <label style={{ display: 'block', color: '#64748b', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>Genere Assistente</label>
+                                    <div style={{ position: 'relative' }}>
+                                        <select 
+                                            style={{
+                                              width: '100%',
+                                              backgroundColor: 'rgba(255,255,255,0.75)',
+                                              border: '1px solid rgba(226,232,240,0.6)',
+                                              borderRadius: '16px',
+                                              padding: '16px 20px',
+                                              fontSize: '15px',
+                                              color: '#1e293b',
+                                              outline: 'none',
+                                              cursor: 'pointer',
+                                              fontWeight: 500,
+                                              appearance: 'none',
+                                              boxSizing: 'border-box',
+                                              backdropFilter: 'blur(4px)'
+                                            }}
+                                            value={config.gender}
+                                            onChange={(e) => setConfig({...config, gender: e.target.value})}
+                                        >
+                                            <option>Uomo</option>
+                                            <option>Donna</option>
+                                            <option>Non-binary</option>
+                                        </select>
+                                        <div style={{ position: 'absolute', right: '20px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#94a3b8' }}>▼</div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', color: '#64748b', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>Età Apparente</label>
+                                    <input 
+                                        type="number"
+                                        style={{
+                                          width: '100%',
+                                          backgroundColor: 'rgba(255,255,255,0.75)',
+                                          border: '1px solid rgba(226,232,240,0.6)',
+                                          borderRadius: '16px',
+                                          padding: '16px 20px',
+                                          fontSize: '15px',
+                                          color: '#1e293b',
+                                          outline: 'none',
+                                          fontWeight: 500,
+                                          boxSizing: 'border-box',
+                                          backdropFilter: 'blur(4px)'
+                                        }}
+                                        value={config.age}
+                                        onChange={(e) => setConfig({...config, age: e.target.value})}
+                                    />
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <label style={{ display: 'block', color: '#64748b', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>Nome Assistente (Opzionale)</label>
+                                <input 
+                                    style={{
+                                      width: '100%',
+                                      backgroundColor: 'rgba(255,255,255,0.75)',
+                                      border: '1px solid rgba(226,232,240,0.6)',
+                                      borderRadius: '16px',
+                                      padding: '16px 20px',
+                                      fontSize: '15px',
+                                      color: '#1e293b',
+                                      outline: 'none',
+                                      fontWeight: 500,
+                                      boxSizing: 'border-box',
+                                      backdropFilter: 'blur(4px)'
+                                    }}
+                                    placeholder="Lascia vuoto per generare automaticamente"
+                                    value={config.name}
+                                    onChange={(e) => setConfig({...config, name: e.target.value})}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Section 3: Dettagli Aspetto */}
+                        <div style={{ marginBottom: '28px' }}>
+                            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                                <Wand2 size={20} style={{ color: '#94a3b8' }}/> Aspetto Fisico
+                            </h3>
+                            
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                                <div>
+                                    <label style={{ display: 'block', color: '#64748b', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>Capelli</label>
+                                    <input 
+                                      style={{ width: '100%', backgroundColor: 'rgba(255,255,255,0.75)', border: '1px solid rgba(226,232,240,0.6)', borderRadius: '12px', padding: '12px 16px', fontSize: '14px', color: '#1e293b', outline: 'none', fontWeight: 500, boxSizing: 'border-box', backdropFilter: 'blur(4px)' }}
+                                      value={config.hairColor} 
+                                      onChange={(e) => setConfig({...config, hairColor: e.target.value})} 
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', color: '#64748b', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>Occhi</label>
+                                    <input 
+                                      style={{ width: '100%', backgroundColor: 'rgba(255,255,255,0.75)', border: '1px solid rgba(226,232,240,0.6)', borderRadius: '12px', padding: '12px 16px', fontSize: '14px', color: '#1e293b', outline: 'none', fontWeight: 500, boxSizing: 'border-box', backdropFilter: 'blur(4px)' }}
+                                      value={config.eyeColor} 
+                                      onChange={(e) => setConfig({...config, eyeColor: e.target.value})} 
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', color: '#64748b', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>Pelle</label>
+                                    <input 
+                                      style={{ width: '100%', backgroundColor: 'rgba(255,255,255,0.75)', border: '1px solid rgba(226,232,240,0.6)', borderRadius: '12px', padding: '12px 16px', fontSize: '14px', color: '#1e293b', outline: 'none', fontWeight: 500, boxSizing: 'border-box', backdropFilter: 'blur(4px)' }}
+                                      value={config.skinTone} 
+                                      onChange={(e) => setConfig({...config, skinTone: e.target.value})} 
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', color: '#64748b', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>Corporatura</label>
+                                    <div style={{ position: 'relative' }}>
+                                        <select 
+                                            style={{ width: '100%', backgroundColor: 'rgba(255,255,255,0.75)', border: '1px solid rgba(226,232,240,0.6)', borderRadius: '12px', padding: '12px 16px', fontSize: '14px', color: '#1e293b', outline: 'none', fontWeight: 500, boxSizing: 'border-box', backdropFilter: 'blur(4px)', appearance: 'none', cursor: 'pointer' }}
+                                            value={config.bodyType || 'Normale'}
+                                            onChange={(e) => setConfig({...config, bodyType: e.target.value})}
+                                        >
+                                            <option>Minuta</option>
+                                            <option>Normale</option>
+                                            <option>Sportiva</option>
+                                            <option>Formosa</option>
+                                            <option>In carne</option>
+                                        </select>
+                                        <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#94a3b8', fontSize: '10px' }}>▼</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {/* Caratteristiche Fisiche */}
+                            <div style={{ marginBottom: '16px' }}>
+                                <label style={{ display: 'block', color: '#64748b', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>Caratteristiche Fisiche (occhiali, lentiggini, tatuaggi, ecc.)</label>
+                                <input 
+                                    style={{
+                                      width: '100%',
+                                      backgroundColor: 'rgba(255,255,255,0.75)',
+                                      border: '1px solid rgba(226,232,240,0.6)',
+                                      borderRadius: '12px',
+                                      padding: '12px 16px',
+                                      fontSize: '14px',
+                                      color: '#1e293b',
+                                      outline: 'none',
+                                      fontWeight: 500,
+                                      boxSizing: 'border-box',
+                                      backdropFilter: 'blur(4px)'
+                                    }}
+                                    placeholder="Es: Occhiali eleganti, lentiggini, sorriso gentile..."
+                                    value={config.physicalTraits}
+                                    onChange={(e) => setConfig({...config, physicalTraits: e.target.value})}
+                                />
+                            </div>
+                            
+                            {/* Carattere & Personalità */}
+                            <div>
+                                <label style={{ display: 'block', color: '#64748b', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>Carattere & Personalità</label>
+                                <textarea 
+                                    style={{
+                                      width: '100%',
+                                      backgroundColor: 'rgba(255,255,255,0.75)',
+                                      border: '1px solid rgba(226,232,240,0.6)',
+                                      borderRadius: '16px',
+                                      padding: '16px 20px',
+                                      fontSize: '15px',
+                                      color: '#1e293b',
+                                      height: '80px',
+                                      resize: 'none',
+                                      outline: 'none',
+                                      fontWeight: 500,
+                                      lineHeight: 1.6,
+                                      boxSizing: 'border-box',
+                                      backdropFilter: 'blur(4px)'
+                                    }}
+                                    placeholder="Es: Empatica, calma, saggia, buona ascoltatrice..."
+                                    value={config.personality}
+                                    onChange={(e) => setConfig({...config, personality: e.target.value})}
+                                />
+                            </div>
+                        </div>
+                        
+                        {/* Section 4: Modulazione Voce */}
+                        <div style={{ 
+                          marginBottom: '28px',
+                          backgroundColor: 'rgba(147, 51, 234, 0.05)',
+                          borderRadius: '16px',
+                          padding: '20px',
+                          border: '1px solid rgba(147, 51, 234, 0.1)'
+                        }}>
+                            <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#7c3aed', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                                <Music2 size={18} style={{ color: '#9333ea' }}/> Modulazione Voce
+                            </h3>
+                            
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                                {/* Energia: Calma -> Dinamica */}
+                                <div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <label style={{ color: '#64748b', fontSize: '11px', fontWeight: 600 }}>Energia</label>
+                                        <span style={{ fontSize: '10px', fontWeight: 700, color: '#9333ea', backgroundColor: 'rgba(147, 51, 234, 0.1)', padding: '2px 8px', borderRadius: '8px' }}>
+                                            {(config.voiceEnergy || 50) < 33 ? 'Calma' : (config.voiceEnergy || 50) < 66 ? 'Bilanciata' : 'Dinamica'}
+                                        </span>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <span style={{ fontSize: '10px', color: '#94a3b8' }}>🧘</span>
+                                        <input 
+                                            type="range" 
+                                            min="0" 
+                                            max="100" 
+                                            value={config.voiceEnergy || 50}
+                                            onChange={(e) => setConfig({...config, voiceEnergy: parseInt(e.target.value)})}
+                                            style={{ flex: 1, height: '6px', borderRadius: '3px', appearance: 'none', background: `linear-gradient(to right, #a78bfa ${config.voiceEnergy || 50}%, #e2e8f0 ${config.voiceEnergy || 50}%)`, cursor: 'pointer' }}
+                                        />
+                                        <span style={{ fontSize: '10px', color: '#94a3b8' }}>⚡</span>
+                                    </div>
+                                </div>
+                                
+                                {/* Tono: Caldo -> Professionale */}
+                                <div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <label style={{ color: '#64748b', fontSize: '11px', fontWeight: 600 }}>Tono</label>
+                                        <span style={{ fontSize: '10px', fontWeight: 700, color: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.1)', padding: '2px 8px', borderRadius: '8px' }}>
+                                            {(config.voiceTone || 50) < 33 ? 'Caldo' : (config.voiceTone || 50) < 66 ? 'Neutro' : 'Professionale'}
+                                        </span>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <span style={{ fontSize: '10px', color: '#94a3b8' }}>❤️</span>
+                                        <input 
+                                            type="range" 
+                                            min="0" 
+                                            max="100" 
+                                            value={config.voiceTone || 50}
+                                            onChange={(e) => setConfig({...config, voiceTone: parseInt(e.target.value)})}
+                                            style={{ flex: 1, height: '6px', borderRadius: '3px', appearance: 'none', background: `linear-gradient(to right, #fbbf24 ${config.voiceTone || 50}%, #e2e8f0 ${config.voiceTone || 50}%)`, cursor: 'pointer' }}
+                                        />
+                                        <span style={{ fontSize: '10px', color: '#94a3b8' }}>💼</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Submit Button */}
+                        <button 
+                            onClick={handleConfigSubmit}
+                            disabled={isGeneratingProfile}
+                            style={{
+                              width: '100%',
+                              backgroundColor: isGeneratingProfile ? '#64748b' : '#0f172a',
+                              color: 'white',
+                              padding: '20px',
+                              borderRadius: '16px',
+                              fontWeight: 700,
+                              fontSize: '16px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '12px',
+                              border: 'none',
+                              cursor: isGeneratingProfile ? 'not-allowed' : 'pointer',
+                              boxShadow: '0 8px 24px rgba(15, 23, 42, 0.2)',
+                              transition: 'all 0.2s'
+                            }}
+                        >
+                            {isGeneratingProfile ? (
+                                <>
+                                    <Loader2 className="animate-spin" /> {loadingStep || 'Creazione in corso...'}
+                                </>
+                            ) : (
+                                <>
+                                    Crea il tuo Confidente <ArrowRight />
+                                </>
+                            )}
+                        </button>
                     </div>
                 </div>
             </div>
@@ -585,209 +1030,565 @@ const App: React.FC = () => {
 
   // --- MAIN CHAT INTERFACE (Light Theme) ---
   return (
-    <div 
-        className="flex flex-col md:flex-row h-screen w-full bg-[#FDFCF8] overflow-hidden relative font-sans text-slate-800 bg-cover bg-center"
-        style={{ backgroundImage: "url('background.png')" }}
-    >
+    <div style={{
+      display: 'flex',
+      flexDirection: 'row',
+      height: '100vh',
+      width: '100%',
+      backgroundImage: "url('background.png')",
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      position: 'relative',
+      fontFamily: 'Outfit, sans-serif',
+      color: '#1e293b',
+      overflow: 'hidden'
+    }}>
       
-      {/* Overlay for readability */}
-      <div className="absolute inset-0 bg-white/60 pointer-events-none z-0" />
-
-      {/* LEFT COLUMN: PROFILE */}
-      <aside className="w-full md:w-80 lg:w-96 bg-white/80 backdrop-blur-xl border-r border-slate-200/60 flex flex-col p-6 z-10 overflow-y-auto hidden md:flex shadow-sm">
-         <div className="mb-8 flex items-center gap-3">
-            <AppLogo size={40} className="shadow-md shadow-purple-100" />
-            <h1 className="text-lg font-bold text-slate-800 tracking-tight">Parliamo...</h1>
-         </div>
-
-         {/* Profile Card */}
-         <div className="flex flex-col gap-4 bg-white p-5 rounded-[1.5rem] border border-slate-100 shadow-xl shadow-slate-200/50">
-             <div className="text-center mb-1">
-                 <h2 className="text-2xl font-bold text-slate-800">
-                     {config.name || (config.gender === 'Donna' ? 'La tua Amica' : 'Il tuo Amico')}
-                 </h2>
-                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mt-1">Confidente di {config.userName || 'Te'}</p>
-             </div>
-             
-             <div className="w-full aspect-square rounded-2xl overflow-hidden border-4 border-slate-50 bg-slate-100 relative shadow-inner">
-                 {avatarUrl ? (
-                     <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
-                 ) : (
-                     <div className="w-full h-full flex items-center justify-center">
-                         <User size={48} className="text-slate-300" />
-                     </div>
-                 )}
-             </div>
-
-             <div className="space-y-4 mt-2">
-                 <div className="flex justify-between items-center border-b border-slate-50 pb-3">
-                     <span className="text-slate-400 text-xs font-bold uppercase">Età</span>
-                     <span className="text-slate-700 font-bold">{config.age} anni</span>
-                 </div>
-                 
-                 <div className="flex flex-col gap-2">
-                     <span className="text-slate-400 text-xs font-bold uppercase flex items-center gap-1">
-                        <Heart size={12} className="text-purple-500" /> Biografia
-                     </span>
-                     <p className="text-slate-600 text-sm leading-relaxed italic bg-slate-50 p-4 rounded-xl max-h-40 overflow-y-auto border border-slate-100">
-                         "{config.biography || config.personality}"
-                     </p>
-                 </div>
-             </div>
-         </div>
-         
-         <div className="mt-auto pt-6 grid grid-cols-2 gap-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-             <div className="flex items-center gap-1 hover:text-purple-500 cursor-pointer transition-colors"><Mail size={12}/> Email Support</div>
-             <div className="flex items-center gap-1 hover:text-green-500 cursor-pointer transition-colors"><MessageCircle size={12}/> WhatsApp Support</div>
-         </div>
-      </aside>
-
-      {/* RIGHT COLUMN: CHAT & ACTIONS */}
-      <main className="flex-1 flex flex-col relative z-10 h-full">
-          {/* Header Status */}
-          <div className="w-full p-4 flex justify-between md:justify-end items-center border-b border-slate-100 bg-white/50 backdrop-blur-sm shrink-0">
-            <div className="md:hidden flex items-center gap-2">
-                 <AppLogo size={32} />
-                 <span className="font-bold text-slate-800">{config.name}</span>
-            </div>
-            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full border border-slate-200 shadow-sm">
-                <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-400'}`} />
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{isConnected ? 'ONLINE' : 'OFFLINE'}</span>
-            </div>
+      {/* LEFT COLUMN: PROFILE SIDEBAR - RESPONSIVE */}
+      <aside style={{
+        width: '320px',
+        minWidth: '280px',
+        maxWidth: '350px',
+        backgroundColor: 'rgba(255,255,255,0.9)',
+        backdropFilter: 'blur(12px)',
+        borderRight: '1px solid rgba(226,232,240,0.6)',
+        display: 'flex',
+        flexDirection: 'column',
+        padding: '20px',
+        overflowY: 'auto',
+        position: 'relative',
+        zIndex: 10,
+        flexShrink: 0
+      }}>
+        
+        {/* Header: Logo + Progetto Confidente - CLICCABILE per tornare al menu */}
+        <div 
+          onClick={() => { if(window.confirm('Vuoi tornare al menu principale? La conversazione verrà terminata.')) { disconnect(); setIsConfigured(false); } }}
+          style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', cursor: 'pointer', transition: 'opacity 0.2s' }}
+          onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
+          onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+          title="Torna al menu principale"
+        >
+          <div style={{
+            width: '40px',
+            height: '40px',
+            backgroundColor: 'rgba(255,255,255,0.95)',
+            borderRadius: '10px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 2px 12px rgba(147, 112, 219, 0.2)',
+            overflow: 'hidden',
+            flexShrink: 0
+          }}>
+            <img src="logo.png" alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
           </div>
+          <div>
+            <div style={{ fontSize: '8px', fontWeight: 700, letterSpacing: '0.15em', color: '#64748b', textTransform: 'uppercase' }}>Progetto</div>
+            <div style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.02em' }}>Confidente</div>
+          </div>
+        </div>
 
-          {/* Error Message */}
-          {error && (
-            <div className="absolute top-20 left-1/2 transform -translate-x-1/2 z-50 px-6 py-3 bg-red-500 text-white rounded-xl shadow-xl flex items-center gap-2 font-medium text-sm">
-                <Info size={18} /> {error}
+        {/* Assistant Name */}
+        <h2 style={{
+          fontSize: '22px',
+          fontWeight: 700,
+          color: '#0f172a',
+          marginBottom: '2px',
+          lineHeight: 1.2
+        }}>
+          {config.name || 'Il tuo Confidente'}
+        </h2>
+        <p style={{
+          fontSize: '11px',
+          fontWeight: 600,
+          color: '#64748b',
+          marginBottom: '12px'
+        }}>
+          Confidente di {config.userName || 'Te'}
+        </p>
+
+        {/* Avatar Photo - RESPONSIVE con aspect ratio */}
+        <div style={{
+          width: '100%',
+          paddingBottom: '133%', /* 3:4 aspect ratio */
+          position: 'relative',
+          borderRadius: '12px',
+          overflow: 'hidden',
+          backgroundColor: '#f1f5f9',
+          marginBottom: '12px',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
+          border: '2px solid white'
+        }}>
+          {avatarUrl ? (
+            <img src={avatarUrl} alt="Avatar" style={{ 
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%', 
+              height: '100%', 
+              objectFit: 'cover' 
+            }} />
+          ) : (
+            <div style={{ 
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%', 
+              height: '100%', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center' 
+            }}>
+              <User size={40} style={{ color: '#cbd5e1' }} />
             </div>
           )}
+        </div>
 
-          {/* Central Area: Visualizer (Fixed Height now to allow chat to scroll) */}
-          <div className="shrink-0 flex flex-col items-center justify-center py-6 relative">
-               <div className="relative flex items-center justify-center scale-90 md:scale-100">
-                   <AudioVisualizer isPlaying={isConnected} volume={audioVolume} />
-                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        {isConnected ? (
-                             isMuted ? <MicOff size={40} className="text-slate-300" /> : <div className="p-4 bg-white rounded-full shadow-lg shadow-purple-100"><Mic size={40} className="text-purple-500 animate-pulse" /></div>
-                        ) : (
-                            <div className="text-slate-200">
-                                <PhoneOff size={40} />
-                            </div>
-                        )}
-                   </div>
-               </div>
-               <p className="mt-4 text-slate-400 text-sm font-semibold tracking-widest uppercase animate-fade-in">
-                {isConnected 
-                    ? isMuted ? "Microfono disattivato" : `Parla con ${config.name}...` 
-                    : "In pausa"}
-               </p>
+        {/* Info Section - COMPATTA */}
+        <div style={{
+          backgroundColor: 'rgba(255,255,255,0.7)',
+          borderRadius: '12px',
+          padding: '14px',
+          marginBottom: '12px',
+          border: '1px solid rgba(226,232,240,0.5)'
+        }}>
+          {/* Age */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '8px', borderBottom: '1px solid #f1f5f9', marginBottom: '8px' }}>
+            <span style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Età</span>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>{config.age} anni</span>
           </div>
-
-          {/* Transcript Scroll Area - Updated for Full Height Scrolling */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gradient-to-t from-white via-white/80 to-transparent min-h-0" ref={transcriptRef}>
-              {transcripts.length === 0 && (
-                <div className="h-full flex flex-col items-center justify-center text-slate-300 space-y-2 min-h-[100px]">
-                    <Sparkles size={24} />
-                    <span className="text-sm font-medium">Inizia la conversazione...</span>
-                </div>
-              )}
-              {transcripts.map((t) => (
-                <div key={t.id} className={`flex ${t.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[90%] md:max-w-[70%] rounded-2xl px-5 py-4 text-sm leading-relaxed shadow-sm ${
-                        t.sender === 'user' 
-                        ? 'bg-slate-800 text-white rounded-tr-sm' 
-                        : t.type === 'action' 
-                            ? 'bg-transparent shadow-none p-0' 
-                            : 'bg-white border border-slate-100 text-slate-700 rounded-tl-sm shadow-md shadow-slate-100'
-                    }`}>
-                        {/* Label */}
-                        {t.type !== 'action' && (
-                            <div className={`text-[10px] font-bold uppercase tracking-widest mb-1.5 ${t.sender === 'user' ? 'text-slate-400' : 'text-purple-500'}`}>
-                                {t.sender === 'user' ? (config.userName || 'Tu') : config.name}
-                            </div>
-                        )}
-
-                        {/* Text Content */}
-                        {t.type === 'text' && <div>{t.text}</div>}
-
-                        {/* Image Content */}
-                        {t.type === 'image' && t.image && (
-                            <div className="mt-2 rounded-xl overflow-hidden shadow-lg border-4 border-white relative group">
-                                <img src={t.image} alt="Generata dall'AI" className="w-full h-auto object-cover" />
-                                <button 
-                                  onClick={() => t.image && downloadImage(t.image, `foto-${config.name}.png`)}
-                                  className="absolute bottom-3 right-3 p-2 bg-white text-slate-800 rounded-full opacity-0 group-hover:opacity-100 transition-all shadow-md hover:scale-110"
-                                  title="Scarica"
-                                >
-                                  <Download size={16} />
-                                </button>
-                            </div>
-                        )}
-
-                        {/* Action Buttons */}
-                        {t.type === 'action' && t.actionUrl && (
-                            <div className="flex flex-col gap-2 mt-1">
-                                <div className="text-xs font-medium text-slate-500 ml-1">{t.text}</div>
-                                <a 
-                                    href={t.actionUrl} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
-                                    className={`flex items-center gap-3 p-4 rounded-xl transition-all font-bold text-white shadow-lg transform hover:-translate-y-1 hover:shadow-xl ${
-                                        t.actionIcon === 'mail' 
-                                            ? 'bg-gradient-to-r from-pink-500 to-rose-500' 
-                                            : 'bg-gradient-to-r from-emerald-500 to-teal-500'
-                                    }`}
-                                >
-                                    <div className="p-2 bg-white/20 rounded-full">
-                                        {t.actionIcon === 'mail' ? <Mail size={20} /> : <MessageCircle size={20} />}
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-base">{t.actionLabel}</span>
-                                        <span className="text-[10px] opacity-80 font-normal">Clicca per aprire l'app</span>
-                                    </div>
-                                    <ExternalLink size={16} className="ml-auto opacity-80" />
-                                </a>
-                            </div>
-                        )}
-                    </div>
-                </div>
-             ))}
+          
+          {/* Biography */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
+              <Heart size={10} style={{ color: '#9333ea' }} />
+              <span style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Biografia</span>
+            </div>
+            <p style={{
+              fontSize: '12px',
+              color: '#475569',
+              lineHeight: 1.5,
+              fontStyle: 'italic',
+              backgroundColor: '#f8fafc',
+              padding: '10px',
+              borderRadius: '10px',
+              maxHeight: '80px',
+              overflowY: 'auto',
+              margin: 0
+            }}>
+              "{config.biography || config.personality}"
+            </p>
           </div>
+        </div>
 
-          {/* Controls Footer */}
-          <div className="bg-white border-t border-slate-100 z-20 flex flex-col items-center w-full shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.05)] shrink-0">
-            <div className="p-6 flex justify-center items-center gap-6 w-full">
-                {!isConnected ? (
-                    <button 
-                        onClick={connect}
-                        className="flex items-center gap-3 px-10 py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-full font-bold tracking-wide shadow-xl shadow-slate-300 transition-all transform hover:scale-105 active:scale-95"
-                    >
-                        <Mic className="w-5 h-5" />
-                        INIZIA A PARLARE
-                    </button>
+        {/* Spacer */}
+        <div style={{ flex: 1, minHeight: '10px' }} />
+
+        {/* Connect Button at bottom */}
+        <div style={{ marginTop: 'auto' }}>
+          {!isConnected ? (
+            <button 
+              onClick={connect}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px',
+                padding: '14px 20px',
+                backgroundColor: '#0f172a',
+                color: 'white',
+                borderRadius: '12px',
+                fontWeight: 700,
+                fontSize: '13px',
+                border: 'none',
+                cursor: 'pointer',
+                boxShadow: '0 4px 16px rgba(15, 23, 42, 0.2)',
+                transition: 'all 0.2s'
+              }}
+            >
+              <Mic size={18} />
+              INIZIA A PARLARE
+            </button>
+          ) : (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button 
+                onClick={toggleMute}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '12px',
+                  backgroundColor: isMuted ? '#fef2f2' : 'white',
+                  color: isMuted ? '#ef4444' : '#475569',
+                  borderRadius: '10px',
+                  fontWeight: 600,
+                  border: isMuted ? '1px solid #fecaca' : '1px solid #e2e8f0',
+                  cursor: 'pointer'
+                }}
+              >
+                {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
+              </button>
+              <button 
+                onClick={disconnect}
+                style={{
+                  flex: 2,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  padding: '12px 16px',
+                  backgroundColor: '#fef2f2',
+                  color: '#ef4444',
+                  borderRadius: '10px',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  border: '1px solid #fecaca',
+                  cursor: 'pointer'
+                }}
+              >
+                <PhoneOff size={16} />
+                Termina
+              </button>
+            </div>
+          )}
+          
+          {/* Status indicator */}
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            gap: '6px', 
+            marginTop: '12px',
+            padding: '6px',
+            backgroundColor: 'rgba(255,255,255,0.5)',
+            borderRadius: '16px'
+          }}>
+            <span style={{
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              backgroundColor: isConnected ? '#22c55e' : '#f87171',
+              animation: isConnected ? 'pulse 2s infinite' : 'none'
+            }} />
+            <span style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              {isConnected ? 'CONNESSO' : 'OFFLINE'}
+            </span>
+          </div>
+          
+          {/* Copyright */}
+          <div style={{
+            marginTop: '12px',
+            fontSize: '8px',
+            fontWeight: 500,
+            color: '#94a3b8',
+            textAlign: 'center',
+            letterSpacing: '0.02em',
+            lineHeight: 1.4
+          }}>
+            © Effetre Properties IA Division 2025<br/>All rights reserved
+          </div>
+        </div>
+      </aside>
+
+      {/* RIGHT COLUMN: CHAT AREA */}
+      <main style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative',
+        zIndex: 10,
+        height: '100%',
+        backgroundColor: 'rgba(255,255,255,0.3)'
+      }}>
+        
+        {/* Error Message */}
+        {error && (
+          <div style={{
+            position: 'absolute',
+            top: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 50,
+            padding: '12px 24px',
+            backgroundColor: '#ef4444',
+            color: 'white',
+            borderRadius: '12px',
+            boxShadow: '0 8px 24px rgba(239, 68, 68, 0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontWeight: 500,
+            fontSize: '14px'
+          }}>
+            <Info size={18} /> {error}
+          </div>
+        )}
+
+        {/* Central Visualizer Area - MOLTO COMPATTO */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '16px',
+          padding: '10px 20px',
+          flexShrink: 0,
+          borderBottom: '1px solid rgba(226,232,240,0.4)',
+          backgroundColor: 'rgba(255,255,255,0.4)'
+        }}>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', transform: 'scale(0.5)' }}>
+            <AudioVisualizer isPlaying={isConnected} volume={audioVolume} />
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+              {isConnected ? (
+                isMuted ? (
+                  <MicOff size={28} style={{ color: '#cbd5e1' }} />
                 ) : (
-                    <>
-                        <button 
-                            onClick={toggleMute}
-                            className={`p-5 rounded-full transition-all border shadow-lg ${isMuted ? 'bg-red-50 border-red-200 text-red-500' : 'bg-white border-slate-100 text-slate-700 hover:bg-slate-50'}`}
-                        >
-                            {isMuted ? <MicOff /> : <Mic />}
-                        </button>
-                        
-                        <button 
-                            onClick={disconnect}
-                            className="px-8 py-4 bg-red-50 border border-red-100 text-red-500 hover:bg-red-500 hover:text-white rounded-full font-bold transition-all shadow-md"
-                        >
-                            Termina
-                        </button>
-                    </>
-                )}
-            </div>
-            <div className="pb-4 text-[10px] font-bold text-slate-300 tracking-[0.2em] uppercase">
-                Effetre Properties AI Division
+                  <div style={{ padding: '10px', backgroundColor: 'white', borderRadius: '50%', boxShadow: '0 2px 8px rgba(147, 112, 219, 0.2)' }}>
+                    <Mic size={28} style={{ color: '#9333ea' }} />
+                  </div>
+                )
+              ) : (
+                <PhoneOff size={28} style={{ color: '#e2e8f0' }} />
+              )}
             </div>
           </div>
+          <p style={{
+            margin: 0,
+            color: '#94a3b8',
+            fontSize: '11px',
+            fontWeight: 600,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase'
+          }}>
+            {isConnected 
+              ? isMuted ? "Mic OFF" : `In conversazione con ${config.name}` 
+              : "Premi 'Inizia a parlare'"}
+          </p>
+        </div>
+
+        {/* Transcript Area */}
+        <div 
+          ref={transcriptRef}
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            padding: '20px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            minHeight: 0
+          }}
+        >
+          {transcripts.length === 0 && (
+            <div style={{
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#cbd5e1',
+              gap: '8px',
+              minHeight: '150px'
+            }}>
+              <Sparkles size={32} />
+              <span style={{ fontSize: '14px', fontWeight: 500 }}>Inizia la conversazione...</span>
+            </div>
+          )}
+          
+          {transcripts.map((t) => (
+            <div 
+              key={t.id} 
+              style={{ 
+                display: 'flex', 
+                justifyContent: t.sender === 'user' ? 'flex-end' : 'flex-start' 
+              }}
+            >
+              <div style={{
+                maxWidth: '70%',
+                borderRadius: '16px',
+                padding: t.type === 'action' ? '0' : '16px 20px',
+                fontSize: '14px',
+                lineHeight: 1.6,
+                backgroundColor: t.sender === 'user' 
+                  ? '#0f172a' 
+                  : t.type === 'action' 
+                    ? 'transparent' 
+                    : 'white',
+                color: t.sender === 'user' ? 'white' : '#334155',
+                boxShadow: t.type === 'action' ? 'none' : '0 2px 12px rgba(0,0,0,0.08)',
+                border: t.sender === 'user' || t.type === 'action' ? 'none' : '1px solid #f1f5f9'
+              }}>
+                {/* Label */}
+                {t.type !== 'action' && (
+                  <div style={{
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.1em',
+                    marginBottom: '6px',
+                    color: t.sender === 'user' ? '#94a3b8' : '#9333ea'
+                  }}>
+                    {t.sender === 'user' ? (config.userName || 'Tu') : config.name}
+                  </div>
+                )}
+
+                {/* Text */}
+                {t.type === 'text' && <div>{t.text}</div>}
+
+                {/* Image - Ridimensionata */}
+                {t.type === 'image' && t.image && (
+                  <div style={{ 
+                    marginTop: '8px', 
+                    borderRadius: '12px', 
+                    overflow: 'hidden', 
+                    position: 'relative',
+                    maxWidth: '300px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                  }}>
+                    <img 
+                      src={t.image} 
+                      alt="Foto" 
+                      style={{ 
+                        width: '100%', 
+                        height: 'auto',
+                        maxHeight: '400px',
+                        objectFit: 'cover',
+                        display: 'block'
+                      }} 
+                    />
+                    <button 
+                      onClick={() => t.image && downloadImage(t.image, `foto-${t.sender === 'user' ? config.userName : config.name}-${Date.now()}.png`)}
+                      style={{
+                        position: 'absolute',
+                        bottom: '8px',
+                        right: '8px',
+                        padding: '8px',
+                        backgroundColor: 'white',
+                        color: '#1e293b',
+                        borderRadius: '50%',
+                        border: 'none',
+                        cursor: 'pointer',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                      title="Scarica immagine"
+                    >
+                      <Download size={14} />
+                    </button>
+                  </div>
+                )}
+
+                {/* Action */}
+                {t.type === 'action' && t.actionUrl && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 500, color: '#64748b' }}>{t.text}</div>
+                    <a 
+                      href={t.actionUrl} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '16px',
+                        borderRadius: '12px',
+                        fontWeight: 700,
+                        color: 'white',
+                        textDecoration: 'none',
+                        background: t.actionIcon === 'mail' 
+                          ? 'linear-gradient(135deg, #ec4899, #f43f5e)' 
+                          : 'linear-gradient(135deg, #10b981, #14b8a6)',
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.15)'
+                      }}
+                    >
+                      <div style={{ padding: '8px', backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: '50%' }}>
+                        {t.actionIcon === 'mail' ? <Mail size={20} /> : <MessageCircle size={20} />}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontSize: '15px' }}>{t.actionLabel}</span>
+                        <span style={{ fontSize: '10px', opacity: 0.8, fontWeight: 400 }}>Clicca per aprire</span>
+                      </div>
+                      <ExternalLink size={16} style={{ marginLeft: 'auto', opacity: 0.8 }} />
+                    </a>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Input Area per foto + Footer */}
+        <div style={{
+          borderTop: '1px solid rgba(226,232,240,0.5)',
+          backgroundColor: 'rgba(255,255,255,0.7)',
+          backdropFilter: 'blur(8px)'
+        }}>
+          {/* Photo Upload Area */}
+          <div style={{
+            padding: '12px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '12px'
+          }}>
+            <input 
+              type="file" 
+              ref={fileInputRef}
+              accept="image/*"
+              onChange={handleUserPhotoUpload}
+              style={{ display: 'none' }}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isAnalyzingPhoto}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 20px',
+                backgroundColor: isAnalyzingPhoto ? '#94a3b8' : 'white',
+                color: isAnalyzingPhoto ? 'white' : '#64748b',
+                border: '1px solid #e2e8f0',
+                borderRadius: '12px',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: isAnalyzingPhoto ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+              }}
+            >
+              {isAnalyzingPhoto ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" /> Analizzo la foto...
+                </>
+              ) : (
+                <>
+                  <Camera size={16} /> Invia una foto
+                </>
+              )}
+            </button>
+            <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+              Condividi un'immagine con {config.name}
+            </span>
+          </div>
+          
+          {/* Footer */}
+          <div style={{
+            padding: '12px 16px',
+            textAlign: 'center',
+            fontSize: '10px',
+            fontWeight: 700,
+            color: '#cbd5e1',
+            letterSpacing: '0.2em',
+            textTransform: 'uppercase'
+          }}>
+            Progetto Confidente • AI Division
+          </div>
+        </div>
       </main>
     </div>
   );
