@@ -52,7 +52,7 @@ const sendWhatsappTool: FunctionDeclaration = {
 
 const allTools: Tool[] = [{ functionDeclarations: [generateImageTool, sendEmailTool, sendWhatsappTool] }];
 
-// --- BRANDING COMPONENT (Updated to match Confidente style) ---
+// --- BRANDING COMPONENT (Updated to match In Confidenza... style) ---
 const AppLogo = ({ size = 48, className = "" }: { size?: number, className?: string }) => {
   const [imgError, setImgError] = useState(false);
 
@@ -62,7 +62,7 @@ const AppLogo = ({ size = 48, className = "" }: { size?: number, className?: str
         {!imgError ? (
            <img 
              src="/logo.png" 
-             alt="Logo Confidente" 
+             alt="Logo In Confidenza..." 
              className="w-full h-full object-cover p-1"
              onError={() => setImgError(true)}
            />
@@ -741,7 +741,7 @@ REGOLE FONDAMENTALI:
                         </div>
                         <div>
                             <div style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em', color: '#64748b', textTransform: 'uppercase' }}>Progetto</div>
-                            <div style={{ fontSize: '22px', fontWeight: 700, color: '#1e293b', letterSpacing: '-0.02em' }}>CONFIDENTE</div>
+                            <div style={{ fontSize: '22px', fontWeight: 700, color: '#1e293b', letterSpacing: '-0.02em' }}>In Confidenza...</div>
                         </div>
                     </div>
 
@@ -754,7 +754,7 @@ REGOLE FONDAMENTALI:
                       lineHeight: 1.1,
                       letterSpacing: '-0.02em'
                     }}>
-                        Amico<br/>Confidente
+                        Parliamo...<br/>Sono qui
                     </h1>
                     
                     {/* Description */}
@@ -1302,7 +1302,7 @@ REGOLE FONDAMENTALI:
           ✕
         </button>
         
-        {/* Header: Logo + Progetto Confidente - CLICCABILE per tornare al menu */}
+        {/* Header: Logo + Progetto In Confidenza... - CLICCABILE per tornare al menu */}
         <div 
           onClick={() => { if(window.confirm('Vuoi tornare al menu principale? La conversazione verrà terminata.')) { disconnect(); setIsConfigured(false); setShowSidebar(false); } }}
           style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', cursor: 'pointer', transition: 'opacity 0.2s' }}
@@ -1326,7 +1326,7 @@ REGOLE FONDAMENTALI:
           </div>
           <div>
             <div style={{ fontSize: '8px', fontWeight: 700, letterSpacing: '0.15em', color: '#64748b', textTransform: 'uppercase' }}>Progetto</div>
-            <div style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.02em' }}>Confidente</div>
+            <div style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.02em' }}>In Confidenza...</div>
           </div>
         </div>
 
@@ -1853,7 +1853,7 @@ REGOLE FONDAMENTALI:
             letterSpacing: '0.2em',
             textTransform: 'uppercase'
           }}>
-            Progetto Confidente • AI Division
+            Progetto In Confidenza... • AI Division
           </div>
         </div>
       </main>
