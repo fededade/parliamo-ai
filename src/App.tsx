@@ -1834,10 +1834,15 @@ MESSAGGI (Email, WhatsApp, Telegram):
                 {t.type === 'action' && t.actionUrl && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <div style={{ fontSize: '12px', fontWeight: 500, color: '#64748b' }}>{t.text}</div>
-                    <a 
-                      href={t.actionUrl} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
+                    <button 
+                      onClick={() => {
+                        // Per mailto: usiamo location.href, per altri link window.open
+                        if (t.actionUrl?.startsWith('mailto:')) {
+                          window.location.href = t.actionUrl;
+                        } else {
+                          window.open(t.actionUrl, '_blank', 'noopener,noreferrer');
+                        }
+                      }}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -1846,7 +1851,10 @@ MESSAGGI (Email, WhatsApp, Telegram):
                         borderRadius: '12px',
                         fontWeight: 700,
                         color: 'white',
-                        textDecoration: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        width: '100%',
                         background: t.actionIcon === 'mail' 
                           ? 'linear-gradient(135deg, #ec4899, #f43f5e)' 
                           : t.actionIcon === 'send'
@@ -1860,10 +1868,10 @@ MESSAGGI (Email, WhatsApp, Telegram):
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column' }}>
                         <span style={{ fontSize: '15px' }}>{t.actionLabel}</span>
-                        <span style={{ fontSize: '10px', opacity: 0.8, fontWeight: 400 }}>Clicca per aprire</span>
+                        <span style={{ fontSize: '10px', opacity: 0.8, fontWeight: 400 }}>Tocca per aprire</span>
                       </div>
                       <ExternalLink size={16} style={{ marginLeft: 'auto', opacity: 0.8 }} />
-                    </a>
+                    </button>
                   </div>
                 )}
               </div>
