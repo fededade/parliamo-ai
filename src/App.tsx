@@ -324,8 +324,10 @@ const App: React.FC = () => {
         let foundUrl: string | null = null;
         
         try {
-            const imagePrompt = `Professional Medium shot, waist-up portrait of a friendly ${config.gender === 'Donna' ? 'woman' : config.gender === 'Uomo' ? 'man' : 'person'}, ${config.age} years old, ${config.hairColor} hair, ${config.eyeColor} eyes, ${config.skinTone} skin, ${config.bodyType || 'normal'} build, ${config.physicalTraits || 'warm smile'}. Half-body shot, 8k resolution, photorealistic, soft studio lighting, warm friendly expression. ${profileData.visualPrompt}`;
-            
+            // Cerca questa riga e sostituiscila:
+// Usiamo "American shot" (piano americano) o "3/4 shot" per forzare l'inquadratura fino alle anche/pancia.
+            // Aggiungiamo "hands visible" (mani visibili) perché aiuta l'IA a capire che deve inquadrare anche il corpo.
+            const imagePrompt = `Medium shot from hips up (American shot), visible waist and stomach, camera distance 3 meters. The subject is a friendly ${config.gender === 'Donna' ? 'woman' : config.gender === 'Uomo' ? 'man' : 'person'}, ${config.age} years old, ${config.hairColor} hair, ${config.eyeColor} eyes, ${config.skinTone} skin, ${config.bodyType || 'normal'} build. Wearing casual-elegant clothes suitable for a full torso shot. 8k resolution, photorealistic, soft studio lighting. ${profileData.visualPrompt}`;            
             console.log('Generating image with imagen-4.0-generate-001:', imagePrompt);
             
             const imageResponse = await aiRef.current.models.generateImages({
@@ -334,7 +336,7 @@ const App: React.FC = () => {
                 config: {
                     numberOfImages: 1,
                     outputMimeType: 'image/jpeg',
-                    aspectRatio: '4:3'
+                    aspectRatio: '3:4'
                 }
             });
 
@@ -369,14 +371,22 @@ const App: React.FC = () => {
   const handleImageGeneration = async (prompt: string, isSelfie: boolean = false): Promise<string | null> => {
     if (!aiRef.current) return null;
     
-    // 1. Lanciamo la promessa di generazione SUBITO (in background)
-    // Così l'immagine si carica mentre l'IA parla, guadagnando tempo.
+    // Costruiamo la descrizione fisica FISSA dell'avatar
+    const avatarDescription = `a ${config.age} years old ${config.gender === 'Donna' ? 'woman' : config.gender === 'Uomo' ? 'man' : 'person'}, ${config.hairColor} hair, ${config.eyeColor} eyes, ${config.skinTone} skin, ${config.bodyType || 'normal'} build, ${config.physicalTraits || ''}`;
+
     let finalPrompt = prompt;
-    if (isSelfie && config.visualPrompt) {
-        finalPrompt = `Professional Medium shot, waist-up photograph of a friendly ${config.gender === 'Donna' ? 'woman' : config.gender === 'Uomo' ? 'man' : 'person'}, ${config.age} years old, ${config.hairColor} hair, ${config.eyeColor} eyes. ${config.visualPrompt}. ${prompt}. Photorealistic, warm smile, natural pose.`;
+
+    if (isSelfie) {
+        // --- MODIFICA FONDAMENTALE ---
+        // 1. Mettiamo PRIMA l'azione richiesta dall'utente (prompt) così ha la priorità sulla scena.
+        // 2. Aggiungiamo la descrizione fisica (avatarDescription) come soggetto obbligatorio.
+        // 3. Rimuoviamo "Professional Medium shot" e "Studio lighting" che rendevano le foto troppo statiche.
+        finalPrompt = `A photorealistic photo of ${avatarDescription} who is ${prompt}. 
+        Ensure the character matches the physical description exactly. 
+        High quality, 8k, natural lighting, candid shot.`;
     } else {
-        // Anche per le immagini non-selfie, se descrivono il personaggio, usiamo medium shot
-        finalPrompt = `Medium shot, cinematic photo. ${prompt}`;
+        // Per oggetti generici o altro
+        finalPrompt = `Cinematic photo, high quality. ${prompt}`;
     }
 
     const imageGenerationPromise = aiRef.current.models.generateImages({
