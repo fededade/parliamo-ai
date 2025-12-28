@@ -3,7 +3,7 @@ import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type, To
 import { TranscriptItem, AssistantConfig } from './types';
 import { createBlob, decode, decodeAudioData } from './utils/audio';
 import { AudioVisualizer } from './components/AudioVisualizer';
-import { Mic, MicOff, PhoneOff, User, Bot, Sparkles, Image as ImageIcon, ArrowRight, Loader2, Heart, Info, Mail, MessageCircle, ExternalLink, Download, Wand2, UserCircle, Sliders, Music2, Menu, Camera } from 'lucide-react';
+import { Mic, MicOff, PhoneOff, User, Bot, Sparkles, Image as ImageIcon, ArrowRight, Loader2, Heart, Info, Mail, MessageCircle, ExternalLink, Download, Wand2, UserCircle, Sliders, Music2, Menu, Camera, Send } from 'lucide-react';
 
 const LIVE_MODEL_NAME = 'gemini-2.5-flash-native-audio-preview-09-2025';
 const IMAGE_MODEL_NAME = 'imagen-4.0-generate-001	';
@@ -25,13 +25,13 @@ const generateImageTool: FunctionDeclaration = {
 
 const sendEmailTool: FunctionDeclaration = {
   name: 'send_email',
-  description: 'Strumento per inviare email.',
+  description: 'Invia una email. PRIMA di usare questo strumento, DEVI chiedere all\'utente: 1) indirizzo email del destinatario, 2) oggetto della mail, 3) contenuto del messaggio. Solo quando hai tutte le informazioni, usa lo strumento.',
   parameters: {
     type: Type.OBJECT,
     properties: {
-      recipient: { type: Type.STRING },
-      subject: { type: Type.STRING },
-      body: { type: Type.STRING },
+      recipient: { type: Type.STRING, description: 'Indirizzo email del destinatario' },
+      subject: { type: Type.STRING, description: 'Oggetto della email' },
+      body: { type: Type.STRING, description: 'Corpo del messaggio' },
     },
     required: ['recipient', 'subject', 'body'],
   },
@@ -39,20 +39,33 @@ const sendEmailTool: FunctionDeclaration = {
 
 const sendWhatsappTool: FunctionDeclaration = {
   name: 'send_whatsapp',
-  description: 'Strumento per inviare messaggi WhatsApp.',
+  description: 'Invia un messaggio WhatsApp. PRIMA di usare questo strumento, DEVI chiedere all\'utente: 1) numero di telefono del destinatario (con prefisso internazionale, es. +39), 2) testo del messaggio. Solo quando hai tutte le informazioni, usa lo strumento.',
   parameters: {
     type: Type.OBJECT,
     properties: {
-      phoneNumber: { type: Type.STRING },
-      text: { type: Type.STRING },
+      phoneNumber: { type: Type.STRING, description: 'Numero di telefono con prefisso internazionale (es. +393331234567)' },
+      text: { type: Type.STRING, description: 'Testo del messaggio' },
     },
     required: ['phoneNumber', 'text'],
   },
 };
 
-const allTools: Tool[] = [{ functionDeclarations: [generateImageTool, sendEmailTool, sendWhatsappTool] }];
+const sendTelegramTool: FunctionDeclaration = {
+  name: 'send_telegram',
+  description: 'Invia un messaggio Telegram. PRIMA di usare questo strumento, DEVI chiedere all\'utente: 1) username Telegram del destinatario (senza @) OPPURE numero di telefono, 2) testo del messaggio. Solo quando hai tutte le informazioni, usa lo strumento.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      recipient: { type: Type.STRING, description: 'Username Telegram (senza @) o numero di telefono' },
+      text: { type: Type.STRING, description: 'Testo del messaggio' },
+    },
+    required: ['recipient', 'text'],
+  },
+};
 
-// --- BRANDING COMPONENT (Updated to match In Confidenza... style) ---
+const allTools: Tool[] = [{ functionDeclarations: [generateImageTool, sendEmailTool, sendWhatsappTool, sendTelegramTool] }];
+
+// --- BRANDING COMPONENT (Updated to match Confidente style) ---
 const AppLogo = ({ size = 48, className = "" }: { size?: number, className?: string }) => {
   const [imgError, setImgError] = useState(false);
 
@@ -62,7 +75,7 @@ const AppLogo = ({ size = 48, className = "" }: { size?: number, className?: str
         {!imgError ? (
            <img 
              src="/logo.png" 
-             alt="Logo In Confidenza..." 
+             alt="Logo Confidente" 
              className="w-full h-full object-cover p-1"
              onError={() => setImgError(true)}
            />
@@ -145,6 +158,7 @@ const App: React.FC = () => {
   const currentInputTransRef = useRef('');
   const currentOutputTransRef = useRef('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const wakeLockRef = useRef<any>(null); // Per mantenere lo schermo attivo
 
   useEffect(() => {
     // VERCEL FIX: Defensive API Key retrieval
@@ -474,6 +488,16 @@ const App: React.FC = () => {
     return "SUCCESS";
   };
 
+  const handleSendTelegram = (recipient: string, text: string) => {
+    // Se è un numero di telefono, usa tg://msg_url, altrimenti usa il link diretto all'username
+    const isPhoneNumber = /^\+?\d+$/.test(recipient.replace(/\s/g, ''));
+    const telegramUrl = isPhoneNumber 
+      ? `https://t.me/+${recipient.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`
+      : `https://t.me/${recipient.replace('@', '')}?text=${encodeURIComponent(text)}`;
+    addTranscript({ sender: 'model', type: 'action', text: `✈️ Telegram pronto per: ${recipient}`, isComplete: true, actionUrl: telegramUrl, actionLabel: 'Invia Telegram', actionIcon: 'send' });
+    return "SUCCESS";
+  };
+
   const connect = async () => {
     if (!aiRef.current) {
         setError("Chiave API non trovata. Controlla le impostazioni di Vercel.");
@@ -504,6 +528,29 @@ const App: React.FC = () => {
         return;
       }
       
+      // Wake Lock API - Tenta di mantenere lo schermo attivo durante la conversazione
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+          console.log('Wake Lock attivato - lo schermo rimarrà attivo');
+          // Riattiva il wake lock se viene rilasciato (es. quando si cambia tab)
+          wakeLockRef.current.addEventListener('release', async () => {
+            console.log('Wake Lock rilasciato');
+            // Tenta di riacquisirlo se siamo ancora connessi
+            if (sessionPromiseRef.current && document.visibilityState === 'visible') {
+              try {
+                wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+                console.log('Wake Lock riattivato');
+              } catch (e) {
+                console.log('Impossibile riattivare Wake Lock');
+              }
+            }
+          });
+        }
+      } catch (wakeLockError) {
+        console.log('Wake Lock non disponibile:', wakeLockError);
+      }
+      
       const ageNum = parseInt(config.age) || 30;
       let selectedVoiceName = config.gender === 'Uomo' ? (ageNum < 35 ? 'Puck' : 'Fenrir') : (ageNum < 35 ? 'Aoede' : 'Kore');
 
@@ -522,6 +569,15 @@ REGOLE FONDAMENTALI:
   3. SOLO DOPO che l'utente ha risposto (o se aveva già specificato), chiama lo strumento 'generate_image' con is_selfie=true e nel prompt specifica l'inquadratura richiesta (close-up portrait, medium shot waist-up, full body shot)
 - Se l'utente specifica già l'inquadratura nella richiesta iniziale, salta il punto 2 e procedi direttamente.
 - Quando ${config.userName} ti invia una foto sua, commentala con entusiasmo e curiosità genuina, fai domande per saperne di più.
+
+MESSAGGI (Email, WhatsApp, Telegram):
+- Se ${config.userName} vuole inviare un messaggio (email, WhatsApp o Telegram), DEVI raccogliere TUTTE le informazioni necessarie PRIMA di usare lo strumento:
+  • Per EMAIL: chiedi destinatario, oggetto e testo del messaggio
+  • Per WHATSAPP: chiedi numero di telefono (con prefisso +39 per Italia) e testo del messaggio  
+  • Per TELEGRAM: chiedi username Telegram (senza @) o numero di telefono, e testo del messaggio
+- NON usare lo strumento finché non hai TUTTE le informazioni. Chiedi una cosa alla volta in modo naturale.
+- Quando hai tutto, conferma con l'utente prima di procedere: "Ok, mando a [destinatario] il messaggio: [testo]. Procedo?"
+
 - Parla sempre in italiano in modo naturale e amichevole.`,
           tools: allTools,
           inputAudioTranscription: {},
@@ -557,6 +613,7 @@ REGOLE FONDAMENTALI:
                     if (fc.name === 'generate_image') res = await handleImageGeneration((fc.args as any).prompt, (fc.args as any).is_selfie) || "Err";
                     else if (fc.name === 'send_email') res = handleSendEmail((fc.args as any).recipient, (fc.args as any).subject, (fc.args as any).body);
                     else if (fc.name === 'send_whatsapp') res = handleSendWhatsapp((fc.args as any).phoneNumber, (fc.args as any).text);
+                    else if (fc.name === 'send_telegram') res = handleSendTelegram((fc.args as any).recipient, (fc.args as any).text);
                     sessionPromiseRef.current?.then(s => s.sendToolResponse({ functionResponses: [{ id: fc.id, name: fc.name, response: { result: res } }] }));
                 }
              }
@@ -614,6 +671,12 @@ REGOLE FONDAMENTALI:
     sessionPromiseRef.current = null;
     inputSourceRef.current?.disconnect(); processorRef.current?.disconnect();
     inputAudioContextRef.current?.close(); outputAudioContextRef.current?.close();
+    // Rilascia Wake Lock
+    if (wakeLockRef.current) {
+      wakeLockRef.current.release().catch(() => {});
+      wakeLockRef.current = null;
+      console.log('Wake Lock rilasciato');
+    }
     setIsConnected(false); setAudioVolume(0);
   };
 
@@ -624,6 +687,24 @@ REGOLE FONDAMENTALI:
   };
   const transcriptRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (transcriptRef.current) transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight; }, [transcripts]);
+
+  // Riattiva Wake Lock quando l'utente torna sulla pagina
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible' && isConnected && !wakeLockRef.current) {
+        try {
+          if ('wakeLock' in navigator) {
+            wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+            console.log('Wake Lock riattivato dopo visibility change');
+          }
+        } catch (e) {
+          console.log('Impossibile riattivare Wake Lock');
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isConnected]);
 
   // --- CONFIGURATION SCREEN (LIGHT THEME WATERCOLOR STYLE) ---
   if (!isConfigured) {
@@ -741,7 +822,7 @@ REGOLE FONDAMENTALI:
                         </div>
                         <div>
                             <div style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em', color: '#64748b', textTransform: 'uppercase' }}>Progetto</div>
-                            <div style={{ fontSize: '22px', fontWeight: 700, color: '#1e293b', letterSpacing: '-0.02em' }}>In Confidenza...</div>
+                            <div style={{ fontSize: '22px', fontWeight: 700, color: '#1e293b', letterSpacing: '-0.02em' }}>CONFIDENTE</div>
                         </div>
                     </div>
 
@@ -754,7 +835,7 @@ REGOLE FONDAMENTALI:
                       lineHeight: 1.1,
                       letterSpacing: '-0.02em'
                     }}>
-                        Parliamo...<br/>Sono qui
+                        Amico<br/>Confidente
                     </h1>
                     
                     {/* Description */}
@@ -1302,7 +1383,7 @@ REGOLE FONDAMENTALI:
           ✕
         </button>
         
-        {/* Header: Logo + Progetto In Confidenza... - CLICCABILE per tornare al menu */}
+        {/* Header: Logo + Progetto Confidente - CLICCABILE per tornare al menu */}
         <div 
           onClick={() => { if(window.confirm('Vuoi tornare al menu principale? La conversazione verrà terminata.')) { disconnect(); setIsConfigured(false); setShowSidebar(false); } }}
           style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', cursor: 'pointer', transition: 'opacity 0.2s' }}
@@ -1326,7 +1407,7 @@ REGOLE FONDAMENTALI:
           </div>
           <div>
             <div style={{ fontSize: '8px', fontWeight: 700, letterSpacing: '0.15em', color: '#64748b', textTransform: 'uppercase' }}>Progetto</div>
-            <div style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.02em' }}>In Confidenza...</div>
+            <div style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.02em' }}>Confidente</div>
           </div>
         </div>
 
@@ -1768,12 +1849,14 @@ REGOLE FONDAMENTALI:
                         textDecoration: 'none',
                         background: t.actionIcon === 'mail' 
                           ? 'linear-gradient(135deg, #ec4899, #f43f5e)' 
-                          : 'linear-gradient(135deg, #10b981, #14b8a6)',
+                          : t.actionIcon === 'send'
+                            ? 'linear-gradient(135deg, #0088cc, #00a0dc)'
+                            : 'linear-gradient(135deg, #10b981, #14b8a6)',
                         boxShadow: '0 4px 16px rgba(0,0,0,0.15)'
                       }}
                     >
                       <div style={{ padding: '8px', backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: '50%' }}>
-                        {t.actionIcon === 'mail' ? <Mail size={20} /> : <MessageCircle size={20} />}
+                        {t.actionIcon === 'mail' ? <Mail size={20} /> : t.actionIcon === 'send' ? <Send size={20} /> : <MessageCircle size={20} />}
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column' }}>
                         <span style={{ fontSize: '15px' }}>{t.actionLabel}</span>
@@ -1853,7 +1936,7 @@ REGOLE FONDAMENTALI:
             letterSpacing: '0.2em',
             textTransform: 'uppercase'
           }}>
-            Progetto In Confidenza... • AI Division
+            Progetto Confidente • AI Division
           </div>
         </div>
       </main>
