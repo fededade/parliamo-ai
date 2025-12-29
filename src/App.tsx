@@ -3,7 +3,7 @@ import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type, To
 import { TranscriptItem, AssistantConfig } from './types';
 import { createBlob, decode, decodeAudioData } from './utils/audio';
 import { AudioVisualizer } from './components/AudioVisualizer';
-import { Mic, MicOff, PhoneOff, User, Bot, Sparkles, Image as ImageIcon, ArrowRight, Loader2, Heart, Info, Mail, MessageCircle, ExternalLink, Download, Wand2, UserCircle, Sliders, Music2, Menu, Camera, Send, Calendar, CalendarCheck } from 'lucide-react';
+import { Mic, MicOff, PhoneOff, User, Bot, Sparkles, Image as ImageIcon, ArrowRight, Loader2, Heart, Info, Mail, MessageCircle, ExternalLink, Download, Wand2, UserCircle, Sliders, Music2, Menu, Camera, Send } from 'lucide-react';
 
 const LIVE_MODEL_NAME = 'gemini-2.5-flash-native-audio-preview-09-2025';
 const IMAGE_MODEL_NAME = 'imagen-4.0-generate-001	';
@@ -63,33 +63,7 @@ const sendTelegramTool: FunctionDeclaration = {
   },
 };
 
-const getCalendarEventsTool: FunctionDeclaration = {
-  name: 'get_calendar_events',
-  description: 'Legge gli eventi dal calendario Google dell\'utente. Usa questo strumento quando l\'utente chiede di ricordargli gli appuntamenti, eventi, impegni o cosa ha in agenda. Puoi specificare quanti giorni nel futuro guardare.',
-  parameters: {
-    type: Type.OBJECT,
-    properties: {
-      days_ahead: { type: Type.NUMBER, description: 'Numero di giorni nel futuro da controllare (default 7)' },
-    },
-    required: [],
-  },
-};
-
-const allTools: Tool[] = [{ functionDeclarations: [generateImageTool, sendEmailTool, sendWhatsappTool, sendTelegramTool, getCalendarEventsTool] }];
-
-// Google Calendar OAuth Config
-// Recupero difensivo del Client ID come per l'API Key
-let GOOGLE_CLIENT_ID = '';
-try {
-  // @ts-ignore
-  GOOGLE_CLIENT_ID = import.meta.env?.VITE_GOOGLE_CLIENT_ID || '';
-} catch(e) {}
-if (!GOOGLE_CLIENT_ID) {
-  try {
-     // @ts-ignore
-     GOOGLE_CLIENT_ID = process.env?.VITE_GOOGLE_CLIENT_ID || '';
-  } catch(e) {}
-}
+const allTools: Tool[] = [{ functionDeclarations: [generateImageTool, sendEmailTool, sendWhatsappTool, sendTelegramTool] }];
 
 // --- BRANDING COMPONENT (Updated to match Ti Ascolto style) ---
 const AppLogo = ({ size = 48, className = "" }: { size?: number, className?: string }) => {
@@ -171,7 +145,6 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true); // Inizia visibile su mobile
-  const [googleCalendarToken, setGoogleCalendarToken] = useState<string | null>(null); // Token per Google Calendar
 
   // Refs
   const inputAudioContextRef = useRef<AudioContext | null>(null);
@@ -525,139 +498,6 @@ const App: React.FC = () => {
     return "SUCCESS";
   };
 
-  // --- GOOGLE CALENDAR FUNCTIONS ---
-  const initGoogleCalendar = () => {
-    if (!GOOGLE_CLIENT_ID) {
-      console.log('Google Calendar Client ID non configurato');
-      setError("Google Client ID non configurato! Aggiungi VITE_GOOGLE_CLIENT_ID nel tuo file .env per usare il calendario.");
-      return;
-    }
-    
-    // Crea l'URL per OAuth
-    const redirectUri = window.location.origin;
-    const scope = 'https://www.googleapis.com/auth/calendar.readonly';
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-      `client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}` +
-      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-      `&response_type=token` +
-      `&scope=${encodeURIComponent(scope)}` +
-      `&prompt=consent`;
-    
-    // Apri popup per autorizzazione
-    const popup = window.open(authUrl, 'google-auth', 'width=500,height=600');
-    
-    // Ascolta per il token dalla popup
-    const checkPopup = setInterval(() => {
-      try {
-        if (popup?.location?.hash) {
-          const hash = popup.location.hash.substring(1);
-          const params = new URLSearchParams(hash);
-          const accessToken = params.get('access_token');
-          if (accessToken) {
-            setGoogleCalendarToken(accessToken);
-            localStorage.setItem('google_calendar_token', accessToken);
-            popup.close();
-            clearInterval(checkPopup);
-            console.log('Google Calendar connesso!');
-          }
-        }
-      } catch (e) {
-        // Cross-origin error - popup non ancora reindirizzata
-      }
-      if (popup?.closed) {
-        clearInterval(checkPopup);
-      }
-    }, 500);
-  };
-
-  // Controlla se c'è un token salvato o nell'URL al caricamento
-  useEffect(() => {
-    // Controlla localStorage
-    const savedToken = localStorage.getItem('google_calendar_token');
-    if (savedToken) {
-      setGoogleCalendarToken(savedToken);
-    }
-    
-    // Controlla se siamo tornati dall'OAuth (token nell'URL)
-    if (window.location.hash.includes('access_token')) {
-      const hash = window.location.hash.substring(1);
-      const params = new URLSearchParams(hash);
-      const accessToken = params.get('access_token');
-      if (accessToken) {
-        setGoogleCalendarToken(accessToken);
-        localStorage.setItem('google_calendar_token', accessToken);
-        // Pulisci l'URL
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }
-    }
-  }, []);
-
-  const handleGetCalendarEvents = async (daysAhead: number = 7): Promise<string> => {
-    if (!googleCalendarToken) {
-      return "Il calendario Google non è connesso. Chiedi all'utente di connettere il calendario dalla sidebar.";
-    }
-    
-    try {
-      const now = new Date();
-      const futureDate = new Date();
-      futureDate.setDate(now.getDate() + daysAhead);
-      
-      const response = await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/primary/events?` +
-        `timeMin=${now.toISOString()}` +
-        `&timeMax=${futureDate.toISOString()}` +
-        `&singleEvents=true` +
-        `&orderBy=startTime`,
-        {
-          headers: {
-            'Authorization': `Bearer ${googleCalendarToken}`
-          }
-        }
-      );
-      
-      if (!response.ok) {
-        if (response.status === 401) {
-          // Token scaduto
-          setGoogleCalendarToken(null);
-          localStorage.removeItem('google_calendar_token');
-          return "Il token del calendario è scaduto. Chiedi all'utente di riconnettere il calendario.";
-        }
-        throw new Error('Errore API Calendar');
-      }
-      
-      const data = await response.json();
-      const events = data.items || [];
-      
-      if (events.length === 0) {
-        return `Nessun evento trovato nei prossimi ${daysAhead} giorni.`;
-      }
-      
-      // Formatta gli eventi per l'IA
-      const eventList = events.map((event: any) => {
-        const start = event.start?.dateTime || event.start?.date;
-        const startDate = new Date(start);
-        const dateStr = startDate.toLocaleDateString('it-IT', { 
-          weekday: 'long', 
-          day: 'numeric', 
-          month: 'long',
-          hour: '2-digit',
-          minute: '2-digit'
-        });
-        return `- ${event.summary || 'Evento senza titolo'}: ${dateStr}${event.location ? ` (${event.location})` : ''}`;
-      }).join('\n');
-      
-      return `Ecco i tuoi prossimi ${events.length} eventi:\n${eventList}`;
-    } catch (e: any) {
-      console.error('Errore lettura calendario:', e);
-      return "Si è verificato un errore nel leggere il calendario.";
-    }
-  };
-
-  const disconnectGoogleCalendar = () => {
-    setGoogleCalendarToken(null);
-    localStorage.removeItem('google_calendar_token');
-  };
-
   const connect = async () => {
     if (!aiRef.current) {
         setError("Chiave API non trovata. Controlla le impostazioni di Vercel.");
@@ -738,11 +578,6 @@ MESSAGGI (Email, WhatsApp, Telegram):
 - NON usare lo strumento finché non hai TUTTE le informazioni. Chiedi una cosa alla volta in modo naturale.
 - Quando hai tutto, conferma con l'utente prima di procedere: "Ok, mando a [destinatario] il messaggio: [testo]. Procedo?"
 
-CALENDARIO:
-- Se ${config.userName} ti chiede dei suoi impegni, appuntamenti, eventi o cosa ha in agenda, usa lo strumento 'get_calendar_events' per leggere il suo Google Calendar.
-- ${googleCalendarToken ? 'Il calendario è connesso, puoi leggere gli eventi.' : 'Il calendario NON è connesso. Se l\'utente chiede degli appuntamenti, digli gentilmente di connettere il calendario Google dalla barra laterale.'}
-- Quando leggi gli eventi, riferiscili in modo naturale e conversazionale, come farebbe un amico che ti ricorda i tuoi impegni.
-
 - Parla sempre in italiano in modo naturale e amichevole.`,
           tools: allTools,
           inputAudioTranscription: {},
@@ -779,7 +614,6 @@ CALENDARIO:
                     else if (fc.name === 'send_email') res = handleSendEmail((fc.args as any).recipient, (fc.args as any).subject, (fc.args as any).body);
                     else if (fc.name === 'send_whatsapp') res = handleSendWhatsapp((fc.args as any).phoneNumber, (fc.args as any).text);
                     else if (fc.name === 'send_telegram') res = handleSendTelegram((fc.args as any).recipient, (fc.args as any).text);
-                    else if (fc.name === 'get_calendar_events') res = await handleGetCalendarEvents((fc.args as any).days_ahead || 7);
                     sessionPromiseRef.current?.then(s => s.sendToolResponse({ functionResponses: [{ id: fc.id, name: fc.name, response: { result: res } }] }));
                 }
              }
@@ -1494,9 +1328,9 @@ CALENDARIO:
 
       {/* LEFT COLUMN: PROFILE SIDEBAR - Solo desktop */}
       <aside className="chat-sidebar" style={{
-        width: '380px',
-        minWidth: '300px',
-        maxWidth: '450px',
+        width: '320px',
+        minWidth: '280px',
+        maxWidth: '350px',
         backgroundColor: 'rgba(255,255,255,0.95)',
         backdropFilter: 'blur(12px)',
         borderRight: '1px solid rgba(226,232,240,0.6)',
@@ -1565,7 +1399,8 @@ CALENDARIO:
           overflow: 'hidden',
           backgroundColor: '#f1f5f9',
           marginBottom: '12px',
-          boxShadow: '0 4px 16px rgba(0,0,0,0.1)'
+          boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
+          border: '2px solid white'
         }}>
           {avatarUrl ? (
             <img src={avatarUrl} alt="Avatar" style={{ 
@@ -1620,7 +1455,7 @@ CALENDARIO:
               backgroundColor: '#f8fafc',
               padding: '10px',
               borderRadius: '10px',
-              maxHeight: '200px', // Aumentato per mostrare più testo
+              maxHeight: '80px',
               overflowY: 'auto',
               margin: 0
             }}>
@@ -1701,65 +1536,6 @@ CALENDARIO:
               </button>
             </div>
           )}
-          
-          {/* Google Calendar Connection - MODIFICATO: SEMPRE VISIBILE */}
-          <div style={{ marginTop: '12px' }}>
-              {googleCalendarToken ? (
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '10px 12px',
-                  backgroundColor: '#f0fdf4',
-                  borderRadius: '10px',
-                  border: '1px solid #bbf7d0'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <CalendarCheck size={16} style={{ color: '#22c55e' }} />
-                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#16a34a' }}>Calendario connesso</span>
-                  </div>
-                  <button
-                    onClick={disconnectGoogleCalendar}
-                    style={{
-                      padding: '4px 8px',
-                      fontSize: '9px',
-                      backgroundColor: 'transparent',
-                      color: '#64748b',
-                      border: 'none',
-                      cursor: 'pointer',
-                      textDecoration: 'underline'
-                    }}
-                  >
-                    Disconnetti
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={initGoogleCalendar}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    padding: '12px 14px',
-                    backgroundColor: '#f3e8ff', // Sfondo viola chiarissimo per risaltare
-                    color: '#7e22ce', // Testo viola scuro
-                    borderRadius: '12px',
-                    border: '1px solid #d8b4fe',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    transition: 'all 0.2s',
-                    boxShadow: '0 2px 5px rgba(147, 51, 234, 0.1)'
-                  }}
-                  title={!GOOGLE_CLIENT_ID ? "Configura VITE_GOOGLE_CLIENT_ID" : ""}
-                >
-                  <Calendar size={18} />
-                  {GOOGLE_CLIENT_ID ? "Connetti Google Calendar" : "Configura Calendar (ID Mancante)"}
-                </button>
-              )}
-          </div>
           
           {/* Status indicator */}
           <div style={{ 
@@ -1910,8 +1686,10 @@ CALENDARIO:
                 fontSize: '10px', 
                 color: '#475569', 
                 lineHeight: 1.4, 
-                maxHeight: '80px', // Altezza fissa ma scrollabile
-                overflowY: 'auto'  // Abilita lo scroll
+                overflow: 'hidden',
+                display: '-webkit-box',
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: 'vertical'
               }}>
                 {config.biography || 'Nessuna biografia disponibile.'}
               </p>
@@ -2237,17 +2015,17 @@ CALENDARIO:
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '6px',
-                    padding: '12px 16px',
+                    padding: '12px',
                     backgroundColor: '#fef2f2',
                     color: '#ef4444',
                     borderRadius: '10px',
                     fontWeight: 700,
-                    fontSize: '13px',
+                    fontSize: '12px',
                     border: '1px solid #fecaca',
                     cursor: 'pointer'
                   }}
                 >
-                  <PhoneOff size={16} />
+                  <PhoneOff size={14} />
                   Termina
                 </button>
               </div>
