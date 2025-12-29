@@ -1494,9 +1494,9 @@ CALENDARIO:
 
       {/* LEFT COLUMN: PROFILE SIDEBAR - Solo desktop */}
       <aside className="chat-sidebar" style={{
-        width: '320px',
-        minWidth: '280px',
-        maxWidth: '350px',
+        width: '380px',
+        minWidth: '300px',
+        maxWidth: '450px',
         backgroundColor: 'rgba(255,255,255,0.95)',
         backdropFilter: 'blur(12px)',
         borderRight: '1px solid rgba(226,232,240,0.6)',
@@ -1565,8 +1565,7 @@ CALENDARIO:
           overflow: 'hidden',
           backgroundColor: '#f1f5f9',
           marginBottom: '12px',
-          boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
-          border: '2px solid white'
+          boxShadow: '0 4px 16px rgba(0,0,0,0.1)'
         }}>
           {avatarUrl ? (
             <img src={avatarUrl} alt="Avatar" style={{ 
@@ -1621,7 +1620,7 @@ CALENDARIO:
               backgroundColor: '#f8fafc',
               padding: '10px',
               borderRadius: '10px',
-              maxHeight: '80px',
+              maxHeight: '200px', // Aumentato per mostrare più testo
               overflowY: 'auto',
               margin: 0
             }}>
@@ -1743,20 +1742,20 @@ CALENDARIO:
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '8px',
-                    padding: '10px 12px',
-                    backgroundColor: 'white',
-                    color: '#475569',
-                    borderRadius: '10px',
-                    border: '1px solid #e2e8f0',
+                    padding: '12px 14px',
+                    backgroundColor: '#f3e8ff', // Sfondo viola chiarissimo per risaltare
+                    color: '#7e22ce', // Testo viola scuro
+                    borderRadius: '12px',
+                    border: '1px solid #d8b4fe',
                     cursor: 'pointer',
-                    fontSize: '12px',
+                    fontSize: '13px',
                     fontWeight: 600,
                     transition: 'all 0.2s',
-                    opacity: GOOGLE_CLIENT_ID ? 1 : 0.6 // Visual hint
+                    boxShadow: '0 2px 5px rgba(147, 51, 234, 0.1)'
                   }}
                   title={!GOOGLE_CLIENT_ID ? "Configura VITE_GOOGLE_CLIENT_ID" : ""}
                 >
-                  <Calendar size={16} />
+                  <Calendar size={18} />
                   {GOOGLE_CLIENT_ID ? "Connetti Google Calendar" : "Configura Calendar (ID Mancante)"}
                 </button>
               )}
@@ -1911,10 +1910,8 @@ CALENDARIO:
                 fontSize: '10px', 
                 color: '#475569', 
                 lineHeight: 1.4, 
-                overflow: 'hidden',
-                display: '-webkit-box',
-                WebkitLineClamp: 3,
-                WebkitBoxOrient: 'vertical'
+                maxHeight: '80px', // Altezza fissa ma scrollabile
+                overflowY: 'auto'  // Abilita lo scroll
               }}>
                 {config.biography || 'Nessuna biografia disponibile.'}
               </p>
@@ -2240,17 +2237,17 @@ CALENDARIO:
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '6px',
-                    padding: '12px',
+                    padding: '12px 16px',
                     backgroundColor: '#fef2f2',
                     color: '#ef4444',
                     borderRadius: '10px',
                     fontWeight: 700,
-                    fontSize: '12px',
+                    fontSize: '13px',
                     border: '1px solid #fecaca',
                     cursor: 'pointer'
                   }}
                 >
-                  <PhoneOff size={14} />
+                  <PhoneOff size={16} />
                   Termina
                 </button>
               </div>
