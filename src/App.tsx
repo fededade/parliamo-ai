@@ -65,7 +65,7 @@ const sendTelegramTool: FunctionDeclaration = {
 
 const allTools: Tool[] = [{ functionDeclarations: [generateImageTool, sendEmailTool, sendWhatsappTool, sendTelegramTool] }];
 
-// --- BRANDING COMPONENT (Updated to match Confidente style) ---
+// --- BRANDING COMPONENT (Updated to match Ti Ascolto style) ---
 const AppLogo = ({ size = 48, className = "" }: { size?: number, className?: string }) => {
   const [imgError, setImgError] = useState(false);
 
@@ -75,7 +75,7 @@ const AppLogo = ({ size = 48, className = "" }: { size?: number, className?: str
         {!imgError ? (
            <img 
              src="/logo.png" 
-             alt="Logo Confidente" 
+             alt="Logo Ti Ascolto" 
              className="w-full h-full object-cover p-1"
              onError={() => setImgError(true)}
            />
@@ -822,7 +822,7 @@ MESSAGGI (Email, WhatsApp, Telegram):
                         </div>
                         <div>
                             <div style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em', color: '#64748b', textTransform: 'uppercase' }}>Progetto</div>
-                            <div style={{ fontSize: '22px', fontWeight: 700, color: '#1e293b', letterSpacing: '-0.02em' }}>CONFIDENTE</div>
+                            <div style={{ fontSize: '22px', fontWeight: 700, color: '#1e293b', letterSpacing: '-0.02em' }}>TI ASCOLTO</div>
                         </div>
                     </div>
 
@@ -835,7 +835,7 @@ MESSAGGI (Email, WhatsApp, Telegram):
                       lineHeight: 1.1,
                       letterSpacing: '-0.02em'
                     }}>
-                        Amico<br/>Confidente
+                        Ciao,<br/>Parliamo, ti va?
                     </h1>
                     
                     {/* Description */}
@@ -913,10 +913,10 @@ MESSAGGI (Email, WhatsApp, Telegram):
                             </div>
                         </div>
 
-                        {/* Section 2: Il tuo Confidente */}
+                        {/* Section 2: Il tuo Amico */}
                         <div style={{ marginBottom: '28px' }}>
                             <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                                <Bot size={20} style={{ color: '#f59e0b' }}/> Il tuo Confidente
+                                <Bot size={20} style={{ color: '#f59e0b' }}/> Il tuo Amico
                             </h3>
                             
                             <div className="config-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
@@ -1233,7 +1233,7 @@ MESSAGGI (Email, WhatsApp, Telegram):
                                 {isGeneratingProfile ? <Loader2 className="animate-spin" size={20} /> : <Heart fill="currentColor" size={20} />}
                             </div>
                             <span style={{ fontWeight: 700, color: 'white', fontSize: '16px' }}>
-                              {isGeneratingProfile ? (loadingStep || 'Creazione in corso...') : (isFormComplete ? 'Crea il tuo Confidente' : 'Compila tutti i campi')}
+                              {isGeneratingProfile ? (loadingStep || 'Creazione in corso...') : (isFormComplete ? 'Crea il tuo Amico' : 'Compila tutti i campi')}
                             </span>
                         </button>
                         
@@ -1275,47 +1275,32 @@ MESSAGGI (Email, WhatsApp, Telegram):
       
       {/* CSS per mobile chat */}
       <style>{`
+        @keyframes glowPulseGreen {
+          0%, 100% { box-shadow: 0 0 15px 5px rgba(34, 197, 94, 0.6); }
+          50% { box-shadow: 0 0 25px 10px rgba(34, 197, 94, 0.9); }
+        }
+        @keyframes glowPulseOrange {
+          0%, 100% { box-shadow: 0 0 10px 3px rgba(249, 115, 22, 0.5); }
+          50% { box-shadow: 0 0 18px 6px rgba(249, 115, 22, 0.8); }
+        }
         @media (max-width: 768px) {
           .chat-sidebar {
-            position: fixed !important;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 280px !important;
-            min-width: 280px !important;
-            max-width: 280px !important;
-            transform: translateX(-100%);
-            transition: transform 0.3s ease;
-            z-index: 100 !important;
-          }
-          .chat-sidebar.show {
-            transform: translateX(0);
+            display: none !important;
           }
           .chat-overlay {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.5);
-            z-index: 99;
-          }
-          .chat-overlay.show {
-            display: block;
+            display: none !important;
           }
           .mobile-menu-btn {
-            display: flex !important;
+            display: none !important;
           }
           .chat-main {
             width: 100% !important;
           }
-          .chat-visualizer-area {
-            padding: 6px 12px !important;
-            gap: 8px !important;
+          .desktop-visualizer {
+            display: none !important;
           }
-          .chat-visualizer-area .visualizer-wrapper {
-            transform: scale(0.35) !important;
-          }
-          .chat-visualizer-area p {
-            font-size: 9px !important;
+          .mobile-header {
+            display: flex !important;
           }
           .chat-transcript {
             padding: 12px !important;
@@ -1336,17 +1321,145 @@ MESSAGGI (Email, WhatsApp, Telegram):
           .chat-overlay {
             display: none !important;
           }
+          .mobile-header {
+            display: none !important;
+          }
+          .desktop-visualizer {
+            display: flex !important;
+          }
         }
       `}</style>
       
-      {/* Overlay per mobile */}
+      {/* MOBILE HEADER - Solo su mobile, con foto e alone colorato */}
       <div 
-        className={`chat-overlay ${showSidebar ? 'show' : ''}`}
-        onClick={() => setShowSidebar(false)}
-      />
-      
-      {/* LEFT COLUMN: PROFILE SIDEBAR - RESPONSIVE */}
-      <aside className={`chat-sidebar ${showSidebar ? 'show' : ''}`} style={{
+        className="mobile-header"
+        style={{
+          display: 'none', // Nascosto di default, visibile su mobile via CSS
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: '16px',
+          padding: '16px',
+          backgroundColor: 'rgba(255,255,255,0.95)',
+          backdropFilter: 'blur(12px)',
+          borderBottom: '1px solid rgba(226,232,240,0.6)'
+        }}
+      >
+        {/* Foto con alone colorato */}
+        <div 
+          onClick={() => { if(window.confirm('Vuoi tornare al menu principale?')) { disconnect(); setIsConfigured(false); } }}
+          style={{
+            width: '80px',
+            height: '80px',
+            borderRadius: '50%',
+            overflow: 'hidden',
+            flexShrink: 0,
+            cursor: 'pointer',
+            position: 'relative',
+            // Alone colorato basato sullo stato
+            boxShadow: !isConnected 
+              ? '0 2px 12px rgba(0,0,0,0.1)' // Non connesso - nessun alone
+              : isMuted 
+                ? '0 0 15px 5px rgba(239, 68, 68, 0.7)' // Rosso fisso - muto
+                : audioVolume > 0.1 
+                  ? '0 0 20px 8px rgba(34, 197, 94, 0.8)' // Verde - sta parlando
+                  : '0 0 12px 4px rgba(249, 115, 22, 0.6)', // Arancione - ascolta
+            animation: !isConnected || isMuted 
+              ? 'none' 
+              : audioVolume > 0.1 
+                ? 'glowPulseGreen 1s ease-in-out infinite' 
+                : 'glowPulseOrange 1.5s ease-in-out infinite',
+            transition: 'box-shadow 0.3s ease'
+          }}
+        >
+          {avatarUrl ? (
+            <img 
+              src={avatarUrl} 
+              alt="Avatar" 
+              style={{ 
+                width: '100%', 
+                height: '100%', 
+                objectFit: 'cover',
+                objectPosition: 'center 20%' // Zoom sulla faccia
+              }} 
+            />
+          ) : (
+            <div style={{ 
+              width: '100%', 
+              height: '100%', 
+              backgroundColor: '#f1f5f9', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center' 
+            }}>
+              <UserCircle size={40} style={{ color: '#cbd5e1' }} />
+            </div>
+          )}
+        </div>
+        
+        {/* Info a destra */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h2 style={{ 
+            fontSize: '18px', 
+            fontWeight: 700, 
+            color: '#0f172a', 
+            marginBottom: '2px',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis'
+          }}>
+            {config.name || 'Il tuo Amico'}
+          </h2>
+          <p style={{ 
+            fontSize: '12px', 
+            color: '#64748b', 
+            marginBottom: '6px' 
+          }}>
+            Amico di {config.userName}
+          </p>
+          {/* Stato connessione */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            <div style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              backgroundColor: !isConnected ? '#94a3b8' : isMuted ? '#ef4444' : '#22c55e'
+            }} />
+            <span style={{ 
+              fontSize: '11px', 
+              color: !isConnected ? '#94a3b8' : isMuted ? '#ef4444' : '#22c55e',
+              fontWeight: 600 
+            }}>
+              {!isConnected ? 'Non connesso' : isMuted ? 'Muto' : audioVolume > 0.1 ? 'Sta parlando...' : 'In ascolto'}
+            </span>
+          </div>
+        </div>
+        
+        {/* Pulsanti controllo rapidi */}
+        <div style={{ display: 'flex', gap: '8px' }}>
+          {isConnected && (
+            <button
+              onClick={toggleMute}
+              style={{
+                padding: '10px',
+                borderRadius: '50%',
+                border: 'none',
+                backgroundColor: isMuted ? '#fef2f2' : '#f0fdf4',
+                color: isMuted ? '#ef4444' : '#22c55e',
+                cursor: 'pointer'
+              }}
+            >
+              {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* LEFT COLUMN: PROFILE SIDEBAR - Solo desktop */}
+      <aside className="chat-sidebar" style={{
         width: '320px',
         minWidth: '280px',
         maxWidth: '350px',
@@ -1362,30 +1475,9 @@ MESSAGGI (Email, WhatsApp, Telegram):
         flexShrink: 0
       }}>
         
-        {/* Pulsante chiudi sidebar mobile */}
-        <button
-          className="mobile-menu-btn"
-          onClick={() => setShowSidebar(false)}
-          style={{
-            position: 'absolute',
-            top: '10px',
-            right: '10px',
-            padding: '8px',
-            backgroundColor: 'transparent',
-            border: 'none',
-            cursor: 'pointer',
-            display: 'none',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#64748b'
-          }}
-        >
-          ✕
-        </button>
-        
-        {/* Header: Logo + Progetto Confidente - CLICCABILE per tornare al menu */}
+        {/* Header: Logo + Progetto Ti Ascolto - CLICCABILE per tornare al menu */}
         <div 
-          onClick={() => { if(window.confirm('Vuoi tornare al menu principale? La conversazione verrà terminata.')) { disconnect(); setIsConfigured(false); setShowSidebar(false); } }}
+          onClick={() => { if(window.confirm('Vuoi tornare al menu principale? La conversazione verrà terminata.')) { disconnect(); setIsConfigured(false); } }}
           style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', cursor: 'pointer', transition: 'opacity 0.2s' }}
           onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
           onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
@@ -1407,7 +1499,7 @@ MESSAGGI (Email, WhatsApp, Telegram):
           </div>
           <div>
             <div style={{ fontSize: '8px', fontWeight: 700, letterSpacing: '0.15em', color: '#64748b', textTransform: 'uppercase' }}>Progetto</div>
-            <div style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.02em' }}>Confidente</div>
+            <div style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.02em' }}>Ti Ascolto</div>
           </div>
         </div>
 
@@ -1419,7 +1511,7 @@ MESSAGGI (Email, WhatsApp, Telegram):
           marginBottom: '2px',
           lineHeight: 1.2
         }}>
-          {config.name || 'Il tuo Confidente'}
+          {config.name || 'Il tuo Amico'}
         </h2>
         <p style={{
           fontSize: '11px',
@@ -1427,7 +1519,7 @@ MESSAGGI (Email, WhatsApp, Telegram):
           color: '#64748b',
           marginBottom: '12px'
         }}>
-          Confidente di {config.userName || 'Te'}
+          Amico di {config.userName || 'Te'}
         </p>
 
         {/* Avatar Photo - RESPONSIVE con aspect ratio */}
@@ -1626,29 +1718,6 @@ MESSAGGI (Email, WhatsApp, Telegram):
         backgroundColor: 'rgba(255,255,255,0.3)'
       }}>
         
-        {/* Mobile Menu Button - Mostra sidebar quando nascosta */}
-        <button
-          className="mobile-menu-btn"
-          onClick={() => setShowSidebar(!showSidebar)}
-          style={{
-            position: 'absolute',
-            top: '10px',
-            left: '10px',
-            zIndex: 50,
-            padding: '10px',
-            backgroundColor: 'white',
-            border: '1px solid #e2e8f0',
-            borderRadius: '10px',
-            cursor: 'pointer',
-            display: 'none',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-          }}
-        >
-          <Menu size={20} style={{ color: '#64748b' }} />
-        </button>
-        
         {/* Error Message */}
         {error && (
           <div style={{
@@ -1674,8 +1743,8 @@ MESSAGGI (Email, WhatsApp, Telegram):
           </div>
         )}
 
-        {/* Central Visualizer Area - MOLTO COMPATTO */}
-        <div className="chat-visualizer-area" style={{
+        {/* Central Visualizer Area - SOLO DESKTOP */}
+        <div className="desktop-visualizer" style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -1944,7 +2013,7 @@ MESSAGGI (Email, WhatsApp, Telegram):
             letterSpacing: '0.2em',
             textTransform: 'uppercase'
           }}>
-            Progetto Confidente • AI Division
+            Progetto Ti Ascolto • AI Division
           </div>
         </div>
       </main>
