@@ -1287,12 +1287,6 @@ MESSAGGI (Email, WhatsApp, Telegram):
           .chat-sidebar {
             display: none !important;
           }
-          .chat-overlay {
-            display: none !important;
-          }
-          .mobile-menu-btn {
-            display: none !important;
-          }
           .chat-main {
             width: 100% !important;
           }
@@ -1303,24 +1297,26 @@ MESSAGGI (Email, WhatsApp, Telegram):
             display: flex !important;
           }
           .chat-transcript {
-            padding: 12px !important;
-            gap: 10px !important;
+            padding: 10px !important;
+            gap: 8px !important;
+          }
+          .chat-transcript > div > div {
+            max-width: 85% !important;
+          }
+          .chat-transcript > div > div > div:first-child {
+            font-size: 8px !important;
+          }
+          .chat-transcript > div > div {
+            padding: 10px 12px !important;
+            font-size: 12px !important;
+            line-height: 1.4 !important;
+            border-radius: 12px !important;
           }
           .chat-footer {
-            padding: 8px 12px !important;
-          }
-          .chat-footer button {
-            padding: 8px 14px !important;
-            font-size: 12px !important;
+            padding: 0 !important;
           }
         }
         @media (min-width: 769px) {
-          .mobile-menu-btn {
-            display: none !important;
-          }
-          .chat-overlay {
-            display: none !important;
-          }
           .mobile-header {
             display: none !important;
           }
@@ -1615,88 +1611,106 @@ MESSAGGI (Email, WhatsApp, Telegram):
           </div>
         )}
 
-        {/* MOBILE HEADER - Solo su mobile, con foto e alone colorato */}
+        {/* MOBILE HEADER - Layout completo con foto, info e logo */}
         <div 
           className="mobile-header"
           style={{
             display: 'none',
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: '16px',
-            padding: '16px',
-            backgroundColor: 'rgba(255,255,255,0.95)',
+            flexDirection: 'column',
+            backgroundColor: 'rgba(255,255,255,0.98)',
             backdropFilter: 'blur(12px)',
             borderBottom: '1px solid rgba(226,232,240,0.6)',
             flexShrink: 0
           }}
         >
-          {/* Foto con alone colorato */}
-          <div 
-            onClick={() => { if(window.confirm('Vuoi tornare al menu principale?')) { disconnect(); setIsConfigured(false); } }}
-            style={{
-              width: '70px',
-              height: '70px',
-              borderRadius: '50%',
-              overflow: 'hidden',
-              flexShrink: 0,
-              cursor: 'pointer',
-              boxShadow: !isConnected 
-                ? '0 2px 12px rgba(0,0,0,0.1)'
-                : isMuted 
-                  ? '0 0 15px 5px rgba(239, 68, 68, 0.7)'
-                  : audioVolume > 0.1 
-                    ? '0 0 20px 8px rgba(34, 197, 94, 0.8)'
-                    : '0 0 12px 4px rgba(249, 115, 22, 0.6)',
-              animation: !isConnected || isMuted 
-                ? 'none' 
-                : audioVolume > 0.1 
-                  ? 'glowPulseGreen 1s ease-in-out infinite' 
-                  : 'glowPulseOrange 1.5s ease-in-out infinite',
-              transition: 'box-shadow 0.3s ease'
-            }}
-          >
-            {avatarUrl ? (
-              <img src={avatarUrl} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 20%' }} />
-            ) : (
-              <div style={{ width: '100%', height: '100%', backgroundColor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <UserCircle size={32} style={{ color: '#cbd5e1' }} />
-              </div>
-            )}
-          </div>
-          
-          {/* Info */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h2 style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', marginBottom: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {config.name || 'Il tuo Amico'}
-            </h2>
-            <p style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>
-              Amico di {config.userName}
-            </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: !isConnected ? '#94a3b8' : isMuted ? '#ef4444' : '#22c55e' }} />
-              <span style={{ fontSize: '10px', color: !isConnected ? '#94a3b8' : isMuted ? '#ef4444' : '#22c55e', fontWeight: 600 }}>
-                {!isConnected ? 'Non connesso' : isMuted ? 'Muto' : audioVolume > 0.1 ? 'Sta parlando...' : 'In ascolto'}
-              </span>
-            </div>
-          </div>
-          
-          {/* Pulsante mute */}
-          {isConnected && (
-            <button
-              onClick={toggleMute}
+          {/* Riga principale: Foto + Info + Logo */}
+          <div style={{ display: 'flex', padding: '12px', gap: '12px' }}>
+            {/* Foto rettangolare con alone colorato */}
+            <div 
+              onClick={() => { if(window.confirm('Vuoi tornare al menu principale?')) { disconnect(); setIsConfigured(false); } }}
               style={{
-                padding: '10px',
-                borderRadius: '50%',
-                border: 'none',
-                backgroundColor: isMuted ? '#fef2f2' : '#f0fdf4',
-                color: isMuted ? '#ef4444' : '#22c55e',
+                width: '100px',
+                height: '130px',
+                borderRadius: '8px',
+                overflow: 'hidden',
+                flexShrink: 0,
                 cursor: 'pointer',
-                flexShrink: 0
+                boxShadow: !isConnected 
+                  ? '0 2px 12px rgba(0,0,0,0.1)'
+                  : isMuted 
+                    ? '0 0 12px 4px rgba(239, 68, 68, 0.7)'
+                    : audioVolume > 0.1 
+                      ? '0 0 15px 6px rgba(34, 197, 94, 0.8)'
+                      : '0 0 10px 4px rgba(249, 115, 22, 0.6)',
+                animation: !isConnected || isMuted 
+                  ? 'none' 
+                  : audioVolume > 0.1 
+                    ? 'glowPulseGreen 1s ease-in-out infinite' 
+                    : 'glowPulseOrange 1.5s ease-in-out infinite',
+                transition: 'box-shadow 0.3s ease'
               }}
             >
-              {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
-            </button>
-          )}
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <div style={{ width: '100%', height: '100%', backgroundColor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <UserCircle size={40} style={{ color: '#cbd5e1' }} />
+                </div>
+              )}
+            </div>
+            
+            {/* Info centrale */}
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+              {/* Nome */}
+              <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: '2px' }}>
+                {config.name || 'Il tuo Amico'}
+              </h2>
+              <p style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
+                Amico di {config.userName}
+              </p>
+              
+              {/* Età */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#94a3b8', marginBottom: '6px' }}>
+                <span>ETÀ</span>
+                <span style={{ color: '#0f172a', fontWeight: 600 }}>{config.age} anni</span>
+              </div>
+              
+              {/* Biografia label */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+                <Heart size={10} fill="#ec4899" style={{ color: '#ec4899' }} />
+                <span style={{ fontSize: '9px', color: '#ec4899', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Biografia</span>
+              </div>
+              
+              {/* Testo biografia */}
+              <p style={{ 
+                fontSize: '10px', 
+                color: '#475569', 
+                lineHeight: 1.4, 
+                overflow: 'hidden',
+                display: '-webkit-box',
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: 'vertical'
+              }}>
+                {config.biography || 'Nessuna biografia disponibile.'}
+              </p>
+            </div>
+            
+            {/* Logo Ti Ascolto */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+              <div style={{
+                width: '40px',
+                height: '40px',
+                borderRadius: '8px',
+                overflow: 'hidden',
+                backgroundColor: 'white',
+                boxShadow: '0 2px 8px rgba(147, 112, 219, 0.15)'
+              }}>
+                <img src="/logo.png" alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              </div>
+              <span style={{ fontSize: '7px', color: '#64748b', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Progetto</span>
+              <span style={{ fontSize: '9px', color: '#0f172a', fontWeight: 700 }}>Ti Ascolto</span>
+            </div>
+          </div>
         </div>
 
         {/* Central Visualizer Area - SOLO DESKTOP */}
@@ -1904,19 +1918,19 @@ MESSAGGI (Email, WhatsApp, Telegram):
           ))}
         </div>
 
-        {/* Input Area per foto + Footer */}
+        {/* Footer Area con pulsanti e copyright */}
         <div className="chat-footer" style={{
           borderTop: '1px solid rgba(226,232,240,0.5)',
-          backgroundColor: 'rgba(255,255,255,0.7)',
-          backdropFilter: 'blur(8px)'
+          backgroundColor: 'rgba(255,255,255,0.95)',
+          backdropFilter: 'blur(8px)',
+          flexShrink: 0
         }}>
-          {/* Photo Upload Area */}
+          {/* Riga pulsanti */}
           <div style={{
-            padding: '12px 20px',
+            padding: '12px 16px',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            gap: '12px'
+            gap: '10px'
           }}>
             <input 
               type="file" 
@@ -1925,51 +1939,120 @@ MESSAGGI (Email, WhatsApp, Telegram):
               onChange={handleUserPhotoUpload}
               style={{ display: 'none' }}
             />
+            
+            {/* Pulsante Invia foto */}
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isAnalyzingPhoto}
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px',
-                padding: '10px 20px',
-                backgroundColor: isAnalyzingPhoto ? '#94a3b8' : 'white',
-                color: isAnalyzingPhoto ? 'white' : '#64748b',
+                gap: '6px',
+                padding: '12px 16px',
+                backgroundColor: 'white',
+                color: isAnalyzingPhoto ? '#94a3b8' : '#64748b',
                 border: '1px solid #e2e8f0',
-                borderRadius: '12px',
-                fontSize: '13px',
+                borderRadius: '10px',
+                fontSize: '12px',
                 fontWeight: 600,
                 cursor: isAnalyzingPhoto ? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+                flexShrink: 0
               }}
             >
-              {isAnalyzingPhoto ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" /> Analizzo la foto...
-                </>
-              ) : (
-                <>
-                  <Camera size={16} /> Invia una foto
-                </>
-              )}
+              {isAnalyzingPhoto ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+              <span>Invia una foto</span>
             </button>
-            <span style={{ fontSize: '11px', color: '#94a3b8' }}>
-              Condividi un'immagine con {config.name}
-            </span>
+            
+            {/* Pulsante principale: Connect/Disconnect/Mute */}
+            {!isConnected ? (
+              <button 
+                onClick={connect}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  padding: '12px 20px',
+                  backgroundColor: '#0f172a',
+                  color: 'white',
+                  borderRadius: '10px',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(15, 23, 42, 0.2)'
+                }}
+              >
+                <Mic size={16} />
+                INIZIA A PARLARE
+              </button>
+            ) : (
+              <div style={{ flex: 1, display: 'flex', gap: '8px' }}>
+                <button 
+                  onClick={toggleMute}
+                  style={{
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '12px',
+                    backgroundColor: isMuted ? '#fef2f2' : '#f0fdf4',
+                    color: isMuted ? '#ef4444' : '#22c55e',
+                    borderRadius: '10px',
+                    fontWeight: 600,
+                    border: isMuted ? '1px solid #fecaca' : '1px solid #bbf7d0',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
+                </button>
+                <button 
+                  onClick={disconnect}
+                  style={{
+                    flex: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '12px',
+                    backgroundColor: '#fef2f2',
+                    color: '#ef4444',
+                    borderRadius: '10px',
+                    fontWeight: 700,
+                    fontSize: '12px',
+                    border: '1px solid #fecaca',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <PhoneOff size={14} />
+                  Termina
+                </button>
+              </div>
+            )}
           </div>
           
-          {/* Footer */}
-          <div style={{
-            padding: '12px 16px',
-            textAlign: 'center',
-            fontSize: '10px',
-            fontWeight: 700,
-            color: '#cbd5e1',
-            letterSpacing: '0.2em',
-            textTransform: 'uppercase'
+          {/* Didascalia foto */}
+          <div style={{ 
+            textAlign: 'center', 
+            fontSize: '10px', 
+            color: '#94a3b8', 
+            paddingBottom: '8px' 
           }}>
-            Progetto Ti Ascolto • AI Division
+            Condividi un'immagine con {config.name}
+          </div>
+          
+          {/* Copyright */}
+          <div style={{
+            padding: '10px 16px',
+            textAlign: 'center',
+            fontSize: '8px',
+            fontWeight: 500,
+            color: '#94a3b8',
+            borderTop: '1px solid rgba(226,232,240,0.3)',
+            letterSpacing: '0.02em'
+          }}>
+            © Effetre Properties IA Division 2025 - All rights reserved
           </div>
         </div>
       </main>
