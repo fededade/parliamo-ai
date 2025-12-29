@@ -1329,134 +1329,6 @@ MESSAGGI (Email, WhatsApp, Telegram):
           }
         }
       `}</style>
-      
-      {/* MOBILE HEADER - Solo su mobile, con foto e alone colorato */}
-      <div 
-        className="mobile-header"
-        style={{
-          display: 'none', // Nascosto di default, visibile su mobile via CSS
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: '16px',
-          padding: '16px',
-          backgroundColor: 'rgba(255,255,255,0.95)',
-          backdropFilter: 'blur(12px)',
-          borderBottom: '1px solid rgba(226,232,240,0.6)'
-        }}
-      >
-        {/* Foto con alone colorato */}
-        <div 
-          onClick={() => { if(window.confirm('Vuoi tornare al menu principale?')) { disconnect(); setIsConfigured(false); } }}
-          style={{
-            width: '80px',
-            height: '80px',
-            borderRadius: '50%',
-            overflow: 'hidden',
-            flexShrink: 0,
-            cursor: 'pointer',
-            position: 'relative',
-            // Alone colorato basato sullo stato
-            boxShadow: !isConnected 
-              ? '0 2px 12px rgba(0,0,0,0.1)' // Non connesso - nessun alone
-              : isMuted 
-                ? '0 0 15px 5px rgba(239, 68, 68, 0.7)' // Rosso fisso - muto
-                : audioVolume > 0.1 
-                  ? '0 0 20px 8px rgba(34, 197, 94, 0.8)' // Verde - sta parlando
-                  : '0 0 12px 4px rgba(249, 115, 22, 0.6)', // Arancione - ascolta
-            animation: !isConnected || isMuted 
-              ? 'none' 
-              : audioVolume > 0.1 
-                ? 'glowPulseGreen 1s ease-in-out infinite' 
-                : 'glowPulseOrange 1.5s ease-in-out infinite',
-            transition: 'box-shadow 0.3s ease'
-          }}
-        >
-          {avatarUrl ? (
-            <img 
-              src={avatarUrl} 
-              alt="Avatar" 
-              style={{ 
-                width: '100%', 
-                height: '100%', 
-                objectFit: 'cover',
-                objectPosition: 'center 20%' // Zoom sulla faccia
-              }} 
-            />
-          ) : (
-            <div style={{ 
-              width: '100%', 
-              height: '100%', 
-              backgroundColor: '#f1f5f9', 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'center' 
-            }}>
-              <UserCircle size={40} style={{ color: '#cbd5e1' }} />
-            </div>
-          )}
-        </div>
-        
-        {/* Info a destra */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h2 style={{ 
-            fontSize: '18px', 
-            fontWeight: 700, 
-            color: '#0f172a', 
-            marginBottom: '2px',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis'
-          }}>
-            {config.name || 'Il tuo Amico'}
-          </h2>
-          <p style={{ 
-            fontSize: '12px', 
-            color: '#64748b', 
-            marginBottom: '6px' 
-          }}>
-            Amico di {config.userName}
-          </p>
-          {/* Stato connessione */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}>
-            <div style={{
-              width: '8px',
-              height: '8px',
-              borderRadius: '50%',
-              backgroundColor: !isConnected ? '#94a3b8' : isMuted ? '#ef4444' : '#22c55e'
-            }} />
-            <span style={{ 
-              fontSize: '11px', 
-              color: !isConnected ? '#94a3b8' : isMuted ? '#ef4444' : '#22c55e',
-              fontWeight: 600 
-            }}>
-              {!isConnected ? 'Non connesso' : isMuted ? 'Muto' : audioVolume > 0.1 ? 'Sta parlando...' : 'In ascolto'}
-            </span>
-          </div>
-        </div>
-        
-        {/* Pulsanti controllo rapidi */}
-        <div style={{ display: 'flex', gap: '8px' }}>
-          {isConnected && (
-            <button
-              onClick={toggleMute}
-              style={{
-                padding: '10px',
-                borderRadius: '50%',
-                border: 'none',
-                backgroundColor: isMuted ? '#fef2f2' : '#f0fdf4',
-                color: isMuted ? '#ef4444' : '#22c55e',
-                cursor: 'pointer'
-              }}
-            >
-              {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
-            </button>
-          )}
-        </div>
-      </div>
 
       {/* LEFT COLUMN: PROFILE SIDEBAR - Solo desktop */}
       <aside className="chat-sidebar" style={{
@@ -1742,6 +1614,90 @@ MESSAGGI (Email, WhatsApp, Telegram):
             <Info size={18} /> {error}
           </div>
         )}
+
+        {/* MOBILE HEADER - Solo su mobile, con foto e alone colorato */}
+        <div 
+          className="mobile-header"
+          style={{
+            display: 'none',
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: '16px',
+            padding: '16px',
+            backgroundColor: 'rgba(255,255,255,0.95)',
+            backdropFilter: 'blur(12px)',
+            borderBottom: '1px solid rgba(226,232,240,0.6)',
+            flexShrink: 0
+          }}
+        >
+          {/* Foto con alone colorato */}
+          <div 
+            onClick={() => { if(window.confirm('Vuoi tornare al menu principale?')) { disconnect(); setIsConfigured(false); } }}
+            style={{
+              width: '70px',
+              height: '70px',
+              borderRadius: '50%',
+              overflow: 'hidden',
+              flexShrink: 0,
+              cursor: 'pointer',
+              boxShadow: !isConnected 
+                ? '0 2px 12px rgba(0,0,0,0.1)'
+                : isMuted 
+                  ? '0 0 15px 5px rgba(239, 68, 68, 0.7)'
+                  : audioVolume > 0.1 
+                    ? '0 0 20px 8px rgba(34, 197, 94, 0.8)'
+                    : '0 0 12px 4px rgba(249, 115, 22, 0.6)',
+              animation: !isConnected || isMuted 
+                ? 'none' 
+                : audioVolume > 0.1 
+                  ? 'glowPulseGreen 1s ease-in-out infinite' 
+                  : 'glowPulseOrange 1.5s ease-in-out infinite',
+              transition: 'box-shadow 0.3s ease'
+            }}
+          >
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 20%' }} />
+            ) : (
+              <div style={{ width: '100%', height: '100%', backgroundColor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <UserCircle size={32} style={{ color: '#cbd5e1' }} />
+              </div>
+            )}
+          </div>
+          
+          {/* Info */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h2 style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', marginBottom: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {config.name || 'Il tuo Amico'}
+            </h2>
+            <p style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>
+              Amico di {config.userName}
+            </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: !isConnected ? '#94a3b8' : isMuted ? '#ef4444' : '#22c55e' }} />
+              <span style={{ fontSize: '10px', color: !isConnected ? '#94a3b8' : isMuted ? '#ef4444' : '#22c55e', fontWeight: 600 }}>
+                {!isConnected ? 'Non connesso' : isMuted ? 'Muto' : audioVolume > 0.1 ? 'Sta parlando...' : 'In ascolto'}
+              </span>
+            </div>
+          </div>
+          
+          {/* Pulsante mute */}
+          {isConnected && (
+            <button
+              onClick={toggleMute}
+              style={{
+                padding: '10px',
+                borderRadius: '50%',
+                border: 'none',
+                backgroundColor: isMuted ? '#fef2f2' : '#f0fdf4',
+                color: isMuted ? '#ef4444' : '#22c55e',
+                cursor: 'pointer',
+                flexShrink: 0
+              }}
+            >
+              {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
+            </button>
+          )}
+        </div>
 
         {/* Central Visualizer Area - SOLO DESKTOP */}
         <div className="desktop-visualizer" style={{
