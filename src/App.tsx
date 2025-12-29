@@ -1508,6 +1508,9 @@ CALENDARIO:
           .desktop-visualizer {
             display: flex !important;
           }
+	  .mobile-calendar-container {
+            display: none !important;
+          }
         }
       `}</style>
 
@@ -2174,7 +2177,64 @@ CALENDARIO:
           backdropFilter: 'blur(8px)',
           flexShrink: 0
         }}>
-          {/* Riga pulsanti */}
+{/* --- NUOVO BLOCCO CALENDARIO PER MOBILE --- */}
+          <div className="mobile-calendar-container" style={{ padding: '10px 16px 0 16px' }}>
+              {googleCalendarToken ? (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '8px 12px',
+                  backgroundColor: '#f0fdf4',
+                  borderRadius: '10px',
+                  border: '1px solid #bbf7d0'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <CalendarCheck size={14} style={{ color: '#22c55e' }} />
+                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#16a34a' }}>Calendario connesso</span>
+                  </div>
+                  <button
+                    onClick={disconnectGoogleCalendar}
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '10px',
+                      backgroundColor: 'transparent',
+                      color: '#64748b',
+                      border: 'none',
+                      cursor: 'pointer',
+                      textDecoration: 'underline'
+                    }}
+                  >
+                    Disconnetti
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={initGoogleCalendar}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    padding: '10px 14px',
+                    backgroundColor: '#f3e8ff',
+                    color: '#7e22ce',
+                    borderRadius: '10px',
+                    border: '1px solid #d8b4fe',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <Calendar size={16} />
+                  {GOOGLE_CLIENT_ID ? "Connetti Google Calendar" : "Configura Calendar"}
+                </button>
+              )}
+          </div>
+          {/* --- FINE NUOVO BLOCCO --- */}          
+	{/* Riga pulsanti */}
           <div style={{
             padding: '12px 16px',
             display: 'flex',
