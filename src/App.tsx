@@ -78,7 +78,18 @@ const getCalendarEventsTool: FunctionDeclaration = {
 const allTools: Tool[] = [{ functionDeclarations: [generateImageTool, sendEmailTool, sendWhatsappTool, sendTelegramTool, getCalendarEventsTool] }];
 
 // Google Calendar OAuth Config
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+// Recupero difensivo del Client ID come per l'API Key
+let GOOGLE_CLIENT_ID = '';
+try {
+  // @ts-ignore
+  GOOGLE_CLIENT_ID = import.meta.env?.VITE_GOOGLE_CLIENT_ID || '';
+} catch(e) {}
+if (!GOOGLE_CLIENT_ID) {
+  try {
+     // @ts-ignore
+     GOOGLE_CLIENT_ID = process.env?.VITE_GOOGLE_CLIENT_ID || '';
+  } catch(e) {}
+}
 
 // --- BRANDING COMPONENT (Updated to match Ti Ascolto style) ---
 const AppLogo = ({ size = 48, className = "" }: { size?: number, className?: string }) => {
@@ -518,6 +529,7 @@ const App: React.FC = () => {
   const initGoogleCalendar = () => {
     if (!GOOGLE_CLIENT_ID) {
       console.log('Google Calendar Client ID non configurato');
+      setError("Google Client ID non configurato! Aggiungi VITE_GOOGLE_CLIENT_ID nel tuo file .env per usare il calendario.");
       return;
     }
     
@@ -1691,10 +1703,9 @@ CALENDARIO:
             </div>
           )}
           
-          {/* Google Calendar Connection */}
+          {/* Google Calendar Connection - MODIFICATO: SEMPRE VISIBILE */}
           <div style={{ marginTop: '12px' }}>
-            {GOOGLE_CLIENT_ID ? (
-              googleCalendarToken ? (
+              {googleCalendarToken ? (
                 <div style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1740,14 +1751,15 @@ CALENDARIO:
                     cursor: 'pointer',
                     fontSize: '12px',
                     fontWeight: 600,
-                    transition: 'all 0.2s'
+                    transition: 'all 0.2s',
+                    opacity: GOOGLE_CLIENT_ID ? 1 : 0.6 // Visual hint
                   }}
+                  title={!GOOGLE_CLIENT_ID ? "Configura VITE_GOOGLE_CLIENT_ID" : ""}
                 >
                   <Calendar size={16} />
-                  Connetti Google Calendar
+                  {GOOGLE_CLIENT_ID ? "Connetti Google Calendar" : "Configura Calendar (ID Mancante)"}
                 </button>
-              )
-            ) : null}
+              )}
           </div>
           
           {/* Status indicator */}
