@@ -6,7 +6,7 @@ import { AudioVisualizer } from './components/AudioVisualizer';
 import { Mic, MicOff, PhoneOff, User, Bot, Sparkles, Image as ImageIcon, ArrowRight, Loader2, Heart, Info, Mail, MessageCircle, ExternalLink, Download, Wand2, UserCircle, Sliders, Music2, Menu, Camera, Send, Calendar, CalendarCheck } from 'lucide-react';
 
 const LIVE_MODEL_NAME = 'gemini-2.5-flash-native-audio-preview-09-2025';
-const IMAGE_MODEL_NAME = 'imagen-4.0-generate-001';
+const IMAGE_MODEL_NAME = 'imagen-4.0-generate-001	';
 const TEXT_MODEL_NAME = 'gemini-2.0-flash';
 
 // --- TOOLS DEFINITION ---
@@ -82,12 +82,12 @@ const allTools: Tool[] = [{ functionDeclarations: [generateImageTool, sendEmailT
 let GOOGLE_CLIENT_ID = '';
 try {
   // @ts-ignore
-  GOOGLE_CLIENT_ID = (import.meta.env?.VITE_GOOGLE_CLIENT_ID || '').trim();
+  GOOGLE_CLIENT_ID = import.meta.env?.VITE_GOOGLE_CLIENT_ID || '';
 } catch(e) {}
 if (!GOOGLE_CLIENT_ID) {
   try {
      // @ts-ignore
-     GOOGLE_CLIENT_ID = (process.env?.VITE_GOOGLE_CLIENT_ID || '').trim();
+     GOOGLE_CLIENT_ID = process.env?.VITE_GOOGLE_CLIENT_ID || '';
   } catch(e) {}
 }
 
@@ -535,16 +535,6 @@ const App: React.FC = () => {
     
     // Crea l'URL per OAuth
     const redirectUri = window.location.origin;
-    
-    // --- DEBUG CRUCIALE PER L'UTENTE ---
-    console.group("🔧 CONFIGURAZIONE GOOGLE CALENDAR RICHIESTA");
-    console.log("%cATTENZIONE SVILUPPATORE!", "color: red; font-size: 16px; font-weight: bold;");
-    console.log("Se vedi errore 400: redirect_uri_mismatch, devi aggiungere questo esatto URL alla Google Cloud Console:");
-    console.log(`%c${redirectUri}`, "color: blue; font-size: 14px; text-decoration: underline;");
-    console.log("Vai su: https://console.cloud.google.com/apis/credentials > Tuo Client ID > Authorized redirect URIs");
-    console.groupEnd();
-    // ------------------------------------
-
     const scope = 'https://www.googleapis.com/auth/calendar.readonly';
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
       `client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}` +
@@ -555,11 +545,6 @@ const App: React.FC = () => {
     
     // Apri popup per autorizzazione
     const popup = window.open(authUrl, 'google-auth', 'width=500,height=600');
-    
-    if (!popup) {
-        setError("Il browser ha bloccato il popup. Per favore consenti i popup per questo sito per connettere Calendar.");
-        return;
-    }
     
     // Ascolta per il token dalla popup
     const checkPopup = setInterval(() => {
@@ -840,11 +825,7 @@ CALENDARIO:
             }
           },
           onclose: () => setIsConnected(false),
-          onerror: (e) => { 
-              console.error(e); 
-              setError(`Errore connessione: ${e.message || 'Errore sconosciuto'}`);
-              disconnect(); 
-          }
+          onerror: (e) => { console.error(e); disconnect(); }
         }
       });
       sessionPromiseRef.current = sessionPromise;
@@ -2238,8 +2219,8 @@ CALENDARIO:
                     alignItems: 'center',
                     justifyContent: 'center',
                     padding: '12px',
-                    backgroundColor: isMuted ? '#fef2f2' : 'white',
-                    color: isMuted ? '#ef4444' : '#475569',
+                    backgroundColor: isMuted ? '#fef2f2' : '#f0fdf4',
+                    color: isMuted ? '#ef4444' : '#22c55e',
                     borderRadius: '10px',
                     fontWeight: 600,
                     border: isMuted ? '1px solid #fecaca' : '1px solid #bbf7d0',
@@ -2261,12 +2242,12 @@ CALENDARIO:
                     color: '#ef4444',
                     borderRadius: '10px',
                     fontWeight: 700,
-                    fontSize: '12px',
+                    fontSize: '13px',
                     border: '1px solid #fecaca',
                     cursor: 'pointer'
                   }}
                 >
-                  <PhoneOff size={14} />
+                  <PhoneOff size={16} />
                   Termina
                 </button>
               </div>
