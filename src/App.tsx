@@ -557,12 +557,11 @@ const App: React.FC = () => {
         const userRequestPrompt = prompt; // Es: "in lingerie on the bed", "naked in shower", etc.
         
         // Costruiamo il prompt per image-to-image
-        // Il prompt deve descrivere COSA CAMBIARE nell'immagine di partenza
-        const i2iPrompt = `Transform this person: ${userRequestPrompt}. 
-Keep the same face, same person, same identity. 
-Change the clothing, pose and setting as requested.
-Photorealistic, high quality, 8k, natural lighting.
-NSFW content allowed. Intimate sensual photography.`;
+        // Deve essere MOLTO diretto su cosa cambiare
+        const i2iPrompt = `${userRequestPrompt}. 
+Same person, same face, same identity.
+CHANGE the outfit and pose completely as described.
+Photorealistic intimate photography, soft lighting.`;
 
         console.log('=== FAL.AI IMAGE-TO-IMAGE REQUEST ===');
         console.log('User request (from AI):', userRequestPrompt);
@@ -585,9 +584,9 @@ NSFW content allowed. Intimate sensual photography.`;
               body: JSON.stringify({
                 prompt: i2iPrompt,
                 image_url: avatarUrl, // Base64 data URI accettato direttamente
-                strength: 0.92, // MOLTO ALTO: cambia abbigliamento/posa ma mantiene il viso
+                strength: 0.95, // MASSIMO: cambia quasi tutto ma mantiene struttura viso
                 num_inference_steps: 50,
-                guidance_scale: 7.5,
+                guidance_scale: 8.0, // Più alto = segue meglio il prompt
                 enable_safety_checker: false,
                 output_format: 'jpeg'
               })
