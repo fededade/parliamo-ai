@@ -12,12 +12,13 @@ const TEXT_MODEL_NAME = 'gemini-2.0-flash';
 // --- TOOLS DEFINITION ---
 const generateImageTool: FunctionDeclaration = {
   name: 'generate_image',
-  description: 'Genera un\'immagine. Usalo quando l\'utente chiede di vedere qualcosa o chiede una TUA foto.',
+  description: 'Genera un\'immagine. Usalo quando l\'utente chiede di vedere qualcosa o chiede una TUA foto. Se l\'utente chiede esplicitamente una foto "senza censure", "hot", "sexy", "intima", "osé", "nuda" o simili, imposta is_uncensored a TRUE.',
   parameters: {
     type: Type.OBJECT,
     properties: {
       prompt: { type: Type.STRING, description: 'La descrizione del contesto o della scena.' },
-      is_selfie: { type: Type.BOOLEAN, description: 'TRUE se è una foto dell\'assistente, FALSE se oggetto generico.' }
+      is_selfie: { type: Type.BOOLEAN, description: 'TRUE se è una foto dell\'assistente, FALSE se oggetto generico.' },
+      is_uncensored: { type: Type.BOOLEAN, description: 'TRUE se l\'utente chiede esplicitamente contenuti senza censure/hot/sexy/intimi. FALSE per contenuti normali.' }
     },
     required: ['prompt'],
   },
@@ -145,6 +146,51 @@ const App: React.FC = () => {
   const [isGeneratingProfile, setIsGeneratingProfile] = useState(false);
   const [loadingStep, setLoadingStep] = useState<string>('');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  
+  // Carica configurazione salvata da localStorage all'avvio
+  useEffect(() => {
+    const savedConfig = localStorage.getItem('ti_ascolto_config');
+    const savedAvatar = localStorage.getItem('ti_ascolto_avatar');
+    const savedIsConfigured = localStorage.getItem('ti_ascolto_configured');
+    
+    if (savedIsConfigured === 'true' && savedConfig) {
+      try {
+        const parsedConfig = JSON.parse(savedConfig);
+        setConfig(parsedConfig);
+        if (savedAvatar) {
+          setAvatarUrl(savedAvatar);
+        }
+        setIsConfigured(true);
+        console.log('Configurazione caricata da localStorage');
+      } catch (e) {
+        console.warn('Errore caricamento configurazione:', e);
+      }
+    }
+  }, []);
+  
+  // Salva configurazione quando viene completata
+  const saveConfigToStorage = (configData: AssistantConfig, avatar: string | null) => {
+    try {
+      localStorage.setItem('ti_ascolto_config', JSON.stringify(configData));
+      localStorage.setItem('ti_ascolto_configured', 'true');
+      if (avatar) {
+        localStorage.setItem('ti_ascolto_avatar', avatar);
+      }
+      console.log('Configurazione salvata in localStorage');
+    } catch (e) {
+      console.warn('Errore salvataggio configurazione:', e);
+    }
+  };
+  
+  // Funzione per resettare e tornare alla home
+  const resetConfiguration = () => {
+    localStorage.removeItem('ti_ascolto_config');
+    localStorage.removeItem('ti_ascolto_avatar');
+    localStorage.removeItem('ti_ascolto_configured');
+    setIsConfigured(false);
+    setAvatarUrl(null);
+    disconnect();
+  };
   
   // Check if all required fields are filled for the pulsing heart
   const isFormComplete = config.userName.trim() !== '' && 
@@ -274,10 +320,10 @@ const App: React.FC = () => {
 
         try {
           // Chiedi all'IA di commentare l'immagine
-          const imageAnalysisPrompt = `Sei ${config.name}, un amico empatico e curioso. L'utente ${config.userName} ti ha appena inviato una foto. 
+          const imageAnalysisPrompt = `Sei ${config.name}, un confidente empatico e curioso. L'utente ${config.userName} ti ha appena inviato una foto. 
           Analizza l'immagine e rispondi in modo amichevole e caloroso. 
           Fai commenti positivi su quello che vedi, mostra interesse genuino e fai 1-2 domande per stimolare la conversazione.
-          Sii naturale e colloquiale, come un vero amico. Rispondi in italiano, max 2-3 frasi.`;
+          Sii naturale e colloquiale, come un vero confidente. Rispondi in italiano, max 2-3 frasi.`;
 
           const response = await aiRef.current!.models.generateContent({
             model: TEXT_MODEL_NAME,
@@ -367,7 +413,7 @@ const App: React.FC = () => {
     
     try {
         const hasManualName = config.name && config.name.trim().length > 0;
-        setLoadingStep(hasManualName ? `Sto definendo la personalità di ${config.name}...` : 'Sto creando il tuo  amico ideale...');
+        setLoadingStep(hasManualName ? `Sto definendo la personalità di ${config.name}...` : 'Sto creando il tuo confidente ideale...');
         
         const basePrompt = `Crea un profilo per un COMPAGNO UMANO: Genere ${config.gender}, Età ${config.age}, Capelli ${config.hairColor}, Occhi ${config.eyeColor}, Pelle ${config.skinTone}, Corporatura ${config.bodyType || 'Normale'}, Caratteristiche fisiche: ${config.physicalTraits}, Personalità ${personalityString}.`;
         const nameInstruction = hasManualName ? `Il nome è "${config.name}".` : `Inventa un nome italiano creativo.`;
@@ -389,11 +435,21 @@ const App: React.FC = () => {
         
         let foundUrl: string | null = null;
         
+        // Mappatura corporatura italiano -> inglese
+        const bodyTypeMap: {[key: string]: string} = {
+          'Minuta': 'petite',
+          'Normale': 'normal',
+          'Sportiva': 'athletic',
+          'Formoso/a': 'curvy',
+          'Taglia comoda': 'plus-size'
+        };
+        const bodyTypeEn = bodyTypeMap[config.bodyType] || 'normal';
+        
         try {
             // Cerca questa riga e sostituiscila:
 // Usiamo "American shot" (piano americano) o "3/4 shot" per forzare l'inquadratura fino alle anche/pancia.
             // Aggiungiamo "hands visible" (mani visibili) perché aiuta l'IA a capire che deve inquadrare anche il corpo.
-            const imagePrompt = `Medium shot from hips up (American shot), visible waist and stomach, camera distance 3 meters. The subject is a friendly ${config.gender === 'Donna' ? 'woman' : config.gender === 'Uomo' ? 'man' : 'person'}, ${config.age} years old, ${config.hairColor} hair, ${config.eyeColor} eyes, ${config.skinTone} skin, ${config.bodyType || 'normal'} build. Wearing casual-elegant clothes suitable for a full torso shot. 8k resolution, photorealistic, soft studio lighting. ${profileData.visualPrompt}`;            
+            const imagePrompt = `Medium shot from hips up (American shot), visible waist and stomach, camera distance 3 meters. The subject is a friendly ${config.gender === 'Donna' ? 'woman' : config.gender === 'Uomo' ? 'man' : 'person'}, ${config.age} years old, ${config.hairColor} hair, ${config.eyeColor} eyes, ${config.skinTone} skin, ${bodyTypeEn} build. Wearing casual-elegant clothes suitable for a full torso shot. 8k resolution, photorealistic, soft studio lighting. ${profileData.visualPrompt}`;            
             console.log('Generating image with imagen-4.0-generate-001:', imagePrompt);
             
             const imageResponse = await aiRef.current.models.generateImages({
@@ -425,6 +481,11 @@ const App: React.FC = () => {
         }
         
         setAvatarUrl(foundUrl);
+        
+        // Salva la configurazione aggiornata in localStorage
+        const updatedConfig = { ...config, name: profileData.name, biography: profileData.biography, visualPrompt: profileData.visualPrompt, personality: personalityString };
+        saveConfigToStorage(updatedConfig, foundUrl);
+        
         setIsConfigured(true);
     } catch (e: any) {
         setError("Errore creazione: " + e.message);
@@ -434,55 +495,194 @@ const App: React.FC = () => {
     }
   };
 
-  const handleImageGeneration = async (prompt: string, isSelfie: boolean = false): Promise<string | null> => {
+  const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, isUncensored: boolean = false): Promise<string | null> => {
     if (!aiRef.current) return null;
     
+    // Mappatura corporatura italiano -> inglese
+    const bodyTypeMap: {[key: string]: string} = {
+      'Minuta': 'petite',
+      'Normale': 'normal',
+      'Sportiva': 'athletic',
+      'Formoso/a': 'curvy',
+      'Taglia comoda': 'plus-size'
+    };
+    const bodyTypeEn = bodyTypeMap[config.bodyType] || 'normal';
+    
     // Costruiamo la descrizione fisica FISSA dell'avatar
-    const avatarDescription = `a ${config.age} years old ${config.gender === 'Donna' ? 'woman' : config.gender === 'Uomo' ? 'man' : 'person'}, ${config.hairColor} hair, ${config.eyeColor} eyes, ${config.skinTone} skin, ${config.bodyType || 'normal'} build, ${config.physicalTraits || ''}`;
+    const avatarDescription = `a ${config.age} years old ${config.gender === 'Donna' ? 'woman' : config.gender === 'Uomo' ? 'man' : 'person'}, ${config.hairColor} hair, ${config.eyeColor} eyes, ${config.skinTone} skin, ${bodyTypeEn} build, ${config.physicalTraits || ''}`;
 
     let finalPrompt = prompt;
 
     if (isSelfie) {
-        // --- MODIFICA FONDAMENTALE ---
-        // 1. Mettiamo PRIMA l'azione richiesta dall'utente (prompt) così ha la priorità sulla scena.
-        // 2. Aggiungiamo la descrizione fisica (avatarDescription) come soggetto obbligatorio.
-        // 3. Rimuoviamo "Professional Medium shot" e "Studio lighting" che rendevano le foto troppo statiche.
         finalPrompt = `A photorealistic photo of ${avatarDescription} who is ${prompt}. 
         Ensure the character matches the physical description exactly. 
         High quality, 8k, natural lighting, candid shot.`;
     } else {
-        // Per oggetti generici o altro
         finalPrompt = `Cinematic photo, high quality. ${prompt}`;
     }
 
+    // --- GENERAZIONE CON FAL.AI (per contenuti uncensored) ---
+    if (isUncensored) {
+      try {
+        // Messaggio di attesa con comportamento "tentennante"
+        if (isSelfie) {
+          addTranscript({ sender: 'model', type: 'text', text: `😳 *Arrossisce leggermente* Ehm... ok, dammi un momento...`, isComplete: true });
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          addTranscript({ sender: 'model', type: 'text', text: `📱 *Cerca l'angolazione giusta...*`, isComplete: true });
+        } else {
+          addTranscript({ sender: 'model', type: 'text', text: `🎨 Sto preparando qualcosa di speciale...`, isComplete: true });
+        }
+
+        // Recupera FAL_KEY
+        let falKey = '';
+        try {
+          // @ts-ignore
+          falKey = (import.meta.env?.VITE_FAL_KEY || '').trim();
+        } catch(e) {}
+        if (!falKey) {
+          try {
+            // @ts-ignore
+            falKey = (process.env?.VITE_FAL_KEY || '').trim();
+          } catch(e) {}
+        }
+
+        if (!falKey) {
+          console.warn('FAL_KEY non configurata');
+          addTranscript({ sender: 'model', type: 'text', text: `😅 Mi dispiace, non riesco a scattare questo tipo di foto al momento...`, isComplete: true });
+          return "Servizio non disponibile al momento.";
+        }
+
+        let falData: any = null;
+
+        // Se è un selfie e abbiamo l'avatar, usa image-to-image per mantenere l'identità
+        if (isSelfie && avatarUrl) {
+          try {
+            addTranscript({ sender: 'model', type: 'text', text: `✨ *Sistema i capelli...*`, isComplete: true });
+            
+            // Usa FLUX image-to-image con l'avatar come base
+            // strength basso (0.6-0.7) mantiene l'identità ma permette modifiche
+            const i2iResponse = await fetch('https://fal.run/fal-ai/flux/dev/image-to-image', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Key ${falKey}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                prompt: finalPrompt,
+                image_url: avatarUrl, // Base64 data URI
+                strength: 0.65, // Mantiene identità (0 = nessun cambiamento, 1 = completamente nuovo)
+                num_inference_steps: 40,
+                guidance_scale: 7.5,
+                num_images: 1,
+                enable_safety_checker: false,
+                output_format: 'jpeg'
+              })
+            });
+
+            console.log('FLUX image-to-image response status:', i2iResponse.status);
+            
+            if (i2iResponse.ok) {
+              falData = await i2iResponse.json();
+              console.log('FLUX i2i response:', falData);
+            } else {
+              const errorText = await i2iResponse.text();
+              console.warn('FLUX i2i error:', i2iResponse.status, errorText);
+            }
+          } catch (i2iErr) {
+            console.warn('Errore FLUX image-to-image:', i2iErr);
+          }
+        }
+
+        // Fallback: usa FLUX text-to-image standard
+        if (!falData || !falData.images || falData.images.length === 0) {
+          console.log('Using FLUX text-to-image fallback...');
+          
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          
+          const falResponse = await fetch('https://fal.run/fal-ai/flux/dev', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Key ${falKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              prompt: finalPrompt,
+              image_size: 'portrait_4_3',
+              num_inference_steps: 28,
+              guidance_scale: 3.5,
+              num_images: 1,
+              enable_safety_checker: false
+            })
+          });
+
+          console.log('FLUX t2i response status:', falResponse.status);
+
+          if (!falResponse.ok) {
+            const errorText = await falResponse.text();
+            console.error('FLUX t2i error:', errorText);
+            throw new Error(`Fal.ai error: ${falResponse.status}`);
+          }
+
+          falData = await falResponse.json();
+          console.log('FLUX t2i response:', falData);
+        }
+        
+        // Estrai URL immagine (gestisce diversi formati di risposta)
+        let imageUrl = '';
+        if (falData?.images && falData.images.length > 0) {
+          imageUrl = falData.images[0].url || falData.images[0];
+        } else if (falData?.image?.url) {
+          imageUrl = falData.image.url;
+        }
+        
+        if (imageUrl) {
+          // Scarica l'immagine da fal.ai e convertila in base64
+          const imageResponse = await fetch(imageUrl);
+          const imageBlob = await imageResponse.blob();
+          const reader = new FileReader();
+          
+          return new Promise((resolve) => {
+            reader.onloadend = () => {
+              const base64Result = reader.result as string;
+              addTranscript({ sender: 'model', type: 'image', image: base64Result, isComplete: true });
+              resolve(isSelfie ? "Ecco... spero ti piaccia! 😊" : "Ecco l'immagine.");
+            };
+            reader.onerror = () => {
+              resolve("Errore nel caricamento dell'immagine.");
+            };
+            reader.readAsDataURL(imageBlob);
+          });
+        }
+        
+        console.warn('Nessuna immagine nella risposta fal.ai:', falData);
+        addTranscript({ sender: 'model', type: 'text', text: `😅 Non sono riuscita a scattare la foto... riproviamo?`, isComplete: true });
+        return "Non sono riuscito a generare l'immagine.";
+      } catch (e: any) {
+        console.error('Errore generazione fal.ai:', e.message || e);
+        addTranscript({ sender: 'model', type: 'text', text: `😅 C'è stato un problemino tecnico... riprova più tardi?`, isComplete: true });
+        return "Errore nella generazione.";
+      }
+    }
+
+    // --- GENERAZIONE STANDARD CON IMAGEN (per contenuti normali) ---
     const imageGenerationPromise = aiRef.current.models.generateImages({
         model: IMAGE_MODEL_NAME,
         prompt: finalPrompt,
         config: {
             numberOfImages: 1,
             outputMimeType: 'image/jpeg',
-            // MODIFICA FORMATO:
-            // '4:3' = Orizzontale (Landscape) -> Soddisfa "non in formato ritratto"
-            // '3:4' = Verticale (Formato telefono)
-            // '1:1' = Quadrato
             aspectRatio: '3:4'
         }
     });
 
     try {
         if (isSelfie) {
-            // 2. SIMULAZIONE TEMPO SCENICO
-            // Aggiungiamo un messaggio visivo immediato
             addTranscript({ sender: 'model', type: 'text', text: `📸 *Prende il telefono e si mette in posa...*`, isComplete: true });
-            
-            // 3. IL TRUCCO: Aspettiamo 4 secondi TASSATIVI mentre l'audio (la voce) sta andando.
-            // Questo permette all'IA di dire "Ehm... aspetta... click!" PRIMA che appaia la foto.
             await new Promise(resolve => setTimeout(resolve, 4000));
         } else {
             addTranscript({ sender: 'model', type: 'text', text: `🎨 Genero l'immagine: "${prompt}"`, isComplete: true });
         }
 
-        // 4. Ora aspettiamo che l'immagine sia pronta (se ci ha messo meno di 4s, è già pronta)
         const response = await imageGenerationPromise;
 
         let imageUrl: string | null = null;
@@ -494,14 +694,13 @@ const App: React.FC = () => {
         }
         
         if (imageUrl) {
-            // 5. SOLO ORA mostriamo l'immagine
             addTranscript({ sender: 'model', type: 'image', image: imageUrl, isComplete: true });
             return isSelfie ? "Foto inviata!" : "Ecco l'immagine.";
         }
         return "Errore nella generazione.";
     } catch (e: any) {
         console.error('Errore generazione immagine:', e.message || e);
-        return "Mi sa che la cazzo di fotocamera non funziona bene oggi...";
+        return "Mi sa che la fotocamera non funziona bene oggi...";
     }
   };
 
@@ -745,7 +944,7 @@ const App: React.FC = () => {
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: selectedVoiceName } } },
-          systemInstruction: `Sei ${config.name}, amico/a di ${config.userName}. Personalità: ${config.personality}. Bio: ${config.biography}.
+          systemInstruction: `Sei ${config.name}, confidente di ${config.userName}. Personalità: ${config.personality}. Bio: ${config.biography}.
 
 REGOLE FONDAMENTALI:
 - Sii naturale, empatico, colloquiale. Non dire MAI di essere un'AI o un assistente virtuale.
@@ -756,6 +955,11 @@ REGOLE FONDAMENTALI:
 - Se l'utente specifica già l'inquadratura nella richiesta iniziale, salta il punto 2 e procedi direttamente.
 - Quando ${config.userName} ti invia una foto sua, commentala con entusiasmo e curiosità genuina.
 - Quando ${config.userName} richiede nuovamente una foto, SALTA il punto 1 (imbarazzo). Rispondi in modo spontaneo e divertito (es. "Vedo che le mie foto ti interessano!"), ma varia sempre la frase.
+
+FOTO SPECIALI (senza censure):
+- Se ${config.userName} chiede ESPLICITAMENTE foto "senza censure", "hot", "sexy", "intime", "osé", "provocanti" o simili, mostra iniziale tentennamento ("Ehm... sei sicuro/a?"), poi usa 'generate_image' con is_uncensored=TRUE.
+- Per questo tipo di richieste, sii più lento e "imbarazzato" nella risposta vocale per dare tempo alla generazione.
+- Se l'utente insiste o conferma, procedi con naturalezza e un pizzico di malizia.
 
 MESSAGGI (Email, WhatsApp, Telegram):
 - Se ${config.userName} vuole inviare un messaggio (email, WhatsApp o Telegram), DEVI raccogliere TUTTE le informazioni necessarie PRIMA di usare lo strumento:
@@ -805,7 +1009,7 @@ CALENDARIO (Protocollo Rigoroso):
              if (msg.toolCall) {
                 for (const fc of msg.toolCall.functionCalls) {
                     let res = "OK";
-                    if (fc.name === 'generate_image') res = await handleImageGeneration((fc.args as any).prompt, (fc.args as any).is_selfie) || "Err";
+                    if (fc.name === 'generate_image') res = await handleImageGeneration((fc.args as any).prompt, (fc.args as any).is_selfie, (fc.args as any).is_uncensored) || "Err";
                     else if (fc.name === 'send_email') res = handleSendEmail((fc.args as any).recipient, (fc.args as any).subject, (fc.args as any).body);
                     else if (fc.name === 'send_whatsapp') res = handleSendWhatsapp((fc.args as any).phoneNumber, (fc.args as any).text);
                     else if (fc.name === 'send_telegram') res = handleSendTelegram((fc.args as any).recipient, (fc.args as any).text);
@@ -1113,10 +1317,10 @@ CALENDARIO (Protocollo Rigoroso):
                             </div>
                         </div>
 
-                        {/* Section 2: Il tuo Amico */}
+                        {/* Section 2: Il tuo Confidente */}
                         <div style={{ marginBottom: '28px' }}>
                             <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                                <Bot size={20} style={{ color: '#f59e0b' }}/> Il tuo Amico
+                                <Bot size={20} style={{ color: '#f59e0b' }}/> Il tuo Confidente
                             </h3>
                             
                             <div className="config-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
@@ -1237,8 +1441,8 @@ CALENDARIO (Protocollo Rigoroso):
                                             <option>Minuta</option>
                                             <option>Normale</option>
                                             <option>Sportiva</option>
-                                            <option>Formosa</option>
-                                            <option>In carne</option>
+                                            <option>Formoso/a</option>
+                                            <option>Taglia comoda</option>
                                         </select>
                                         <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#94a3b8', fontSize: '10px' }}>▼</div>
                                     </div>
@@ -1399,6 +1603,79 @@ CALENDARIO (Protocollo Rigoroso):
                             </div>
                         </div>
 
+                        {/* Section 5: Google Calendar (Opzionale) */}
+                        <div style={{ 
+                          marginBottom: '28px',
+                          backgroundColor: 'rgba(34, 197, 94, 0.05)',
+                          borderRadius: '16px',
+                          padding: '20px',
+                          border: '1px solid rgba(34, 197, 94, 0.15)'
+                        }}>
+                            <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#16a34a', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                                <Calendar size={18} style={{ color: '#22c55e' }}/> Google Calendar
+                                <span style={{ fontSize: '10px', fontWeight: 500, color: '#94a3b8', marginLeft: 'auto' }}>Opzionale</span>
+                            </h3>
+                            <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '16px', lineHeight: 1.5 }}>
+                                Connetti il tuo calendario per permettere al tuo confidente di ricordarti appuntamenti e impegni.
+                            </p>
+                            
+                            {googleCalendarToken ? (
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '12px 16px',
+                                backgroundColor: '#f0fdf4',
+                                borderRadius: '12px',
+                                border: '1px solid #bbf7d0'
+                              }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <CalendarCheck size={18} style={{ color: '#22c55e' }} />
+                                  <span style={{ fontSize: '13px', fontWeight: 600, color: '#16a34a' }}>Calendario connesso!</span>
+                                </div>
+                                <button
+                                  onClick={disconnectGoogleCalendar}
+                                  style={{
+                                    padding: '6px 12px',
+                                    fontSize: '11px',
+                                    backgroundColor: 'transparent',
+                                    color: '#64748b',
+                                    border: '1px solid #e2e8f0',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    fontWeight: 500
+                                  }}
+                                >
+                                  Disconnetti
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={initGoogleCalendar}
+                                style={{
+                                  width: '100%',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '10px',
+                                  padding: '14px 20px',
+                                  backgroundColor: 'white',
+                                  color: '#16a34a',
+                                  borderRadius: '12px',
+                                  border: '1px solid #bbf7d0',
+                                  cursor: 'pointer',
+                                  fontSize: '14px',
+                                  fontWeight: 600,
+                                  transition: 'all 0.2s',
+                                  boxShadow: '0 2px 8px rgba(34, 197, 94, 0.1)'
+                                }}
+                              >
+                                <Calendar size={18} />
+                                {GOOGLE_CLIENT_ID ? "Connetti Google Calendar" : "Configura Calendar (VITE_GOOGLE_CLIENT_ID)"}
+                              </button>
+                            )}
+                        </div>
+
                         {/* PULSANTE CREAZIONE - Alla fine del form */}
                         <button
                           onClick={isFormComplete && !isGeneratingProfile ? handleConfigSubmit : undefined}
@@ -1433,7 +1710,7 @@ CALENDARIO (Protocollo Rigoroso):
                                 {isGeneratingProfile ? <Loader2 className="animate-spin" size={20} /> : <Heart fill="currentColor" size={20} />}
                             </div>
                             <span style={{ fontWeight: 700, color: 'white', fontSize: '16px' }}>
-                              {isGeneratingProfile ? (loadingStep || 'Creazione in corso...') : (isFormComplete ? 'Crea il tuo Amico' : 'Compila tutti i campi')}
+                              {isGeneratingProfile ? (loadingStep || 'Creazione in corso...') : (isFormComplete ? 'Crea il tuo Confidente' : 'Compila tutti i campi')}
                             </span>
                         </button>
                         
@@ -1548,7 +1825,7 @@ CALENDARIO (Protocollo Rigoroso):
         
         {/* Header: Logo + Progetto Ti Ascolto - CLICCABILE per tornare al menu */}
         <div 
-          onClick={() => { if(window.confirm('Vuoi tornare al menu principale? La conversazione verrà terminata.')) { disconnect(); setIsConfigured(false); } }}
+          onClick={() => { if(window.confirm('Vuoi tornare al menu principale? La conversazione verrà terminata.')) { resetConfiguration(); } }}
           style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', cursor: 'pointer', transition: 'opacity 0.2s' }}
           onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
           onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
@@ -1582,7 +1859,7 @@ CALENDARIO (Protocollo Rigoroso):
           marginBottom: '2px',
           lineHeight: 1.2
         }}>
-          {config.name || 'Il tuo Amico'}
+          {config.name || 'Il tuo Confidente'}
         </h2>
         <p style={{
           fontSize: '11px',
@@ -1590,7 +1867,7 @@ CALENDARIO (Protocollo Rigoroso):
           color: '#64748b',
           marginBottom: '12px'
         }}>
-          Amico di {config.userName || 'Te'}
+          Confidente di {config.userName || 'Te'}
         </p>
 
         {/* Avatar Photo - RESPONSIVE con aspect ratio */}
@@ -1888,7 +2165,7 @@ CALENDARIO (Protocollo Rigoroso):
           <div style={{ display: 'flex', padding: '12px', gap: '12px', alignItems: 'stretch' }}>
             {/* Foto rettangolare con alone colorato - DIMENSIONI AUMENTATE */}
             <div 
-              onClick={() => { if(window.confirm('Vuoi tornare al menu principale?')) { disconnect(); setIsConfigured(false); } }}
+              onClick={() => { if(window.confirm('Vuoi tornare al menu principale?')) { resetConfiguration(); } }}
               style={{
                 width: '140px', // Aumentato da 100px
                 aspectRatio: '3/4', // Mantiene la proporzione
@@ -1926,10 +2203,10 @@ CALENDARIO (Protocollo Rigoroso):
               <div>
                 {/* Nome */}
                 <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: '2px', lineHeight: 1.2 }}>
-                  {config.name || 'Il tuo Amico'}
+                  {config.name || 'Il tuo Confidente'}
                 </h2>
                 <p style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
-                  Amico di {config.userName}
+                  Confidente di {config.userName}
                 </p>
                 
                 {/* Età */}
@@ -1964,8 +2241,8 @@ CALENDARIO (Protocollo Rigoroso):
               </div>
             </div>
             
-            {/* Logo Ti Ascolto - Spostato in basso a destra assoluto o reso molto piccolo */}
-            <div style={{ position: 'absolute', bottom: '12px', right: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', opacity: 0.8, transform: 'scale(0.8)', transformOrigin: 'bottom right' }}>
+            {/* Logo Ti Ascolto - In alto a destra */}
+            <div style={{ position: 'absolute', top: '12px', right: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', opacity: 0.9, zIndex: 10 }}>
               <div style={{
                 width: '32px',
                 height: '32px',
