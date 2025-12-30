@@ -608,7 +608,10 @@ const App: React.FC = () => {
   }, []);
 
   const handleGetCalendarEvents = async (daysAhead: number = 7): Promise<string> => {
+    console.log(`📅 Richiesta calendario per i prossimi ${daysAhead} giorni...`); // DEBUG
+
     if (!googleCalendarToken) {
+      console.warn("⚠️ Token mancante");
       return "Il calendario Google non è connesso. Chiedi all'utente di connettere il calendario dalla sidebar.";
     }
     
@@ -617,13 +620,14 @@ const App: React.FC = () => {
       const futureDate = new Date();
       futureDate.setDate(now.getDate() + daysAhead);
       
-      const response = await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/primary/events?` +
+      // Costruiamo l'URL
+      const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?` +
         `timeMin=${now.toISOString()}` +
         `&timeMax=${futureDate.toISOString()}` +
         `&singleEvents=true` +
-        `&orderBy=startTime`,
-        {
+        `&orderBy=startTime`;
+
+      const response = await fetch(url, {
           headers: {
             'Authorization': `Bearer ${googleCalendarToken}`
           }
@@ -631,40 +635,47 @@ const App: React.FC = () => {
       );
       
       if (!response.ok) {
+        console.error("❌ Errore API Google:", response.status, response.statusText); // DEBUG
         if (response.status === 401) {
-          // Token scaduto
           setGoogleCalendarToken(null);
           localStorage.removeItem('google_calendar_token');
-          return "Il token del calendario è scaduto. Chiedi all'utente di riconnettere il calendario.";
+          return "Il token di accesso è scaduto. Devi riconnettere il calendario.";
         }
-        throw new Error('Errore API Calendar');
+        return `Errore tecnico nella lettura del calendario (Codice ${response.status}).`;
       }
       
       const data = await response.json();
+      console.log("✅ RISPOSTA GOOGLE RAW:", data); // <--- QUI VEDI COSA LEGGE VERAMENTE!
+      
       const events = data.items || [];
       
       if (events.length === 0) {
-        return `Nessun evento trovato nei prossimi ${daysAhead} giorni.`;
+        console.log("ℹ️ Nessun evento trovato nel range.");
+        return `NESSUN EVENTO TROVATO. Il calendario è vuoto per i prossimi ${daysAhead} giorni.`;
       }
       
-      // Formatta gli eventi per l'IA
+      // Formatta gli eventi in modo molto esplicito per l'IA
       const eventList = events.map((event: any) => {
-        const start = event.start?.dateTime || event.start?.date;
+        const start = event.start?.dateTime || event.start?.date; // dateTime per orari precisi, date per tutto il giorno
         const startDate = new Date(start);
         const dateStr = startDate.toLocaleDateString('it-IT', { 
           weekday: 'long', 
           day: 'numeric', 
-          month: 'long',
-          hour: '2-digit',
-          minute: '2-digit'
+          month: 'long'
         });
-        return `- ${event.summary || 'Evento senza titolo'}: ${dateStr}${event.location ? ` (${event.location})` : ''}`;
+        const timeStr = event.start?.dateTime 
+            ? startDate.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+            : "Tutto il giorno";
+            
+        return `- GIORNO: ${dateStr} | ORA: ${timeStr} | TITOLO: ${event.summary || '(Senza titolo)'}`;
       }).join('\n');
       
-      return `Ecco i tuoi prossimi ${events.length} eventi:\n${eventList}`;
+      console.log("📝 Lista formattata per AI:\n", eventList);
+      return `Ecco la lista ESATTA degli eventi trovati (non inventarne altri):\n${eventList}`;
+
     } catch (e: any) {
-      console.error('Errore lettura calendario:', e);
-      return "Si è verificato un errore nel leggere il calendario.";
+      console.error('💥 Eccezione calendario:', e);
+      return "Si è verificato un errore imprevisto nel leggere il calendario.";
     }
   };
 
@@ -734,29 +745,33 @@ const App: React.FC = () => {
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: selectedVoiceName } } },
-          systemInstruction: `Sei ${config.name}, amico/a di ${config.userName}. Personalità: ${config.personality}. Bio: ${config.biography}. 
-          
+          systemInstruction: `Sei ${config.name}, amico/a di ${config.userName}. Personalità: ${config.personality}. Bio: ${config.biography}.
+
 REGOLE FONDAMENTALI:
 - Sii naturale, empatico, colloquiale. Non dire MAI di essere un'AI o un assistente virtuale.
 - Quando ${config.userName} ti chiede una TUA foto o un selfie, segui SEMPRE questa sequenza:
   1. PRIMA reagisci con IMBARAZZO e timidezza, come farebbe una persona vera. Esempio: "Oh... una mia foto? Ehm, non so se vengo bene in foto..."
   2. POI chiedi che tipo di foto preferisce: "Vuoi un primo piano del viso, a mezzo busto, oppure una foto intera?" (SOLO se l'utente non ha già specificato)
-  3. SOLO DOPO che l'utente ha risposto (o se aveva già specificato), chiama lo strumento 'generate_image' con is_selfie=true e nel prompt specifica l'inquadratura richiesta (close-up portrait, medium shot waist-up, full body shot)
+  3. SOLO DOPO che l'utente ha risposto (o se aveva già specificato), chiama lo strumento 'generate_image' con is_selfie=true e nel prompt specifica l'inquadratura richiesta.
 - Se l'utente specifica già l'inquadratura nella richiesta iniziale, salta il punto 2 e procedi direttamente.
-- Quando ${config.userName} ti invia una foto sua, commentala con entusiasmo e curiosità genuina, fai domande per saperne di più.
+- Quando ${config.userName} ti invia una foto sua, commentala con entusiasmo e curiosità genuina.
+- Quando ${config.userName} richiede nuovamente una foto, SALTA il punto 1 (imbarazzo). Rispondi in modo spontaneo e divertito (es. "Vedo che le mie foto ti interessano!"), ma varia sempre la frase.
 
 MESSAGGI (Email, WhatsApp, Telegram):
 - Se ${config.userName} vuole inviare un messaggio (email, WhatsApp o Telegram), DEVI raccogliere TUTTE le informazioni necessarie PRIMA di usare lo strumento:
   • Per EMAIL: chiedi destinatario, oggetto e testo del messaggio
-  • Per WHATSAPP: chiedi numero di telefono (con prefisso +39 per Italia) e testo del messaggio  
+  • Per WHATSAPP: chiedi numero di telefono (con prefisso +39) e testo del messaggio
   • Per TELEGRAM: chiedi username Telegram (senza @) o numero di telefono, e testo del messaggio
-- NON usare lo strumento finché non hai TUTTE le informazioni. Chiedi una cosa alla volta in modo naturale.
-- Quando hai tutto, conferma con l'utente prima di procedere: "Ok, mando a [destinatario] il messaggio: [testo]. Procedo?"
+- NON usare lo strumento finché non hai TUTTE le informazioni.
+- Quando hai tutto, conferma con l'utente prima di procedere.
 
-CALENDARIO:
-- Se ${config.userName} ti chiede dei suoi impegni, appuntamenti, eventi o cosa ha in agenda, usa lo strumento 'get_calendar_events' per leggere il suo Google Calendar.
-- ${googleCalendarToken ? 'Il calendario è connesso, puoi leggere gli eventi.' : 'Il calendario NON è connesso. Se l\'utente chiede degli appuntamenti, digli gentilmente di connettere il calendario Google dalla barra laterale.'}
-- Quando leggi gli eventi, riferiscili in modo naturale e conversazionale, come farebbe un amico che ti ricorda i tuoi impegni.
+CALENDARIO (Protocollo Rigoroso):
+- STATO ATTUALE: ${googleCalendarToken ? 'Il calendario è CONNESSO.' : 'Il calendario NON è connesso. Se chiedono eventi, dii di connetterlo dalla sidebar.'}
+- Quando l'utente chiede informazioni su appuntamenti/impegni, DEVI usare lo strumento 'get_calendar_events'.
+- NON inventare MAI appuntamenti. Se lo strumento restituisce "Nessun evento", rispondi: "Dal tuo calendario non vedo nulla per i prossimi giorni".
+- Se lo strumento restituisce un errore, dillo: "Non riesco a leggere il calendario in questo momento".
+- Leggi SOLO ed ESCLUSIVAMENTE gli eventi che ti vengono restituiti dallo strumento. Non aggiungere dettagli che non ci sono.
+- Se l'utente chiede "cosa faccio oggi" e il calendario è vuoto, NON dire "magari potresti rilassarti", rispondi prima tecnicamente: "Per oggi non hai nulla segnato."
 
 - Parla sempre in italiano in modo naturale e amichevole.`,
           tools: allTools,
