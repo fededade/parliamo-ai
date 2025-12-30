@@ -552,15 +552,30 @@ const App: React.FC = () => {
           return "Servizio non disponibile al momento.";
         }
 
+        // Il prompt dall'AI contiene già la descrizione della scena richiesta
+        // Lo usiamo per modificare l'avatar mantenendo l'identità
+        const userRequestPrompt = prompt; // Es: "in lingerie on the bed", "naked in shower", etc.
+        
+        // Costruiamo il prompt per image-to-image
+        // Il prompt deve descrivere COSA CAMBIARE nell'immagine di partenza
+        const i2iPrompt = `Transform this person: ${userRequestPrompt}. 
+Keep the same face, same person, same identity. 
+Change the clothing, pose and setting as requested.
+Photorealistic, high quality, 8k, natural lighting.
+NSFW content allowed. Intimate sensual photography.`;
+
+        console.log('=== FAL.AI IMAGE-TO-IMAGE REQUEST ===');
+        console.log('User request (from AI):', userRequestPrompt);
+        console.log('I2I prompt:', i2iPrompt);
+        console.log('Has avatar:', !!avatarUrl);
+
         let falData: any = null;
 
-        // Se è un selfie e abbiamo l'avatar, usa image-to-image per mantenere l'identità
+        // Usa image-to-image SOLO se abbiamo l'avatar
         if (isSelfie && avatarUrl) {
+          addTranscript({ sender: 'model', type: 'text', text: `✨ *Si prepara...*`, isComplete: true });
+          
           try {
-            addTranscript({ sender: 'model', type: 'text', text: `✨ *Sistema i capelli...*`, isComplete: true });
-            
-            // Usa FLUX image-to-image con l'avatar come base
-            // strength basso (0.6-0.7) mantiene l'identità ma permette modifiche
             const i2iResponse = await fetch('https://fal.run/fal-ai/flux/dev/image-to-image', {
               method: 'POST',
               headers: {
@@ -568,66 +583,64 @@ const App: React.FC = () => {
                 'Content-Type': 'application/json'
               },
               body: JSON.stringify({
-                prompt: finalPrompt,
-                image_url: avatarUrl, // Base64 data URI
-                strength: 0.65, // Mantiene identità (0 = nessun cambiamento, 1 = completamente nuovo)
-                num_inference_steps: 40,
+                prompt: i2iPrompt,
+                image_url: avatarUrl, // Base64 data URI accettato direttamente
+                strength: 0.92, // MOLTO ALTO: cambia abbigliamento/posa ma mantiene il viso
+                num_inference_steps: 50,
                 guidance_scale: 7.5,
-                num_images: 1,
                 enable_safety_checker: false,
                 output_format: 'jpeg'
               })
             });
 
-            console.log('FLUX image-to-image response status:', i2iResponse.status);
+            console.log('I2I response status:', i2iResponse.status);
             
             if (i2iResponse.ok) {
               falData = await i2iResponse.json();
-              console.log('FLUX i2i response:', falData);
+              console.log('I2I response data:', falData);
             } else {
               const errorText = await i2iResponse.text();
-              console.warn('FLUX i2i error:', i2iResponse.status, errorText);
+              console.error('I2I error:', errorText);
             }
           } catch (i2iErr) {
-            console.warn('Errore FLUX image-to-image:', i2iErr);
+            console.error('I2I fetch error:', i2iErr);
           }
         }
 
-        // Fallback: usa FLUX text-to-image standard
+        // Fallback a text-to-image se image-to-image fallisce
         if (!falData || !falData.images || falData.images.length === 0) {
-          console.log('Using FLUX text-to-image fallback...');
+          console.log('Fallback to text-to-image...');
           
-          await new Promise(resolve => setTimeout(resolve, 1500));
-          
-          const falResponse = await fetch('https://fal.run/fal-ai/flux/dev', {
+          // Per text-to-image, usiamo il finalPrompt che include la descrizione fisica
+          const t2iResponse = await fetch('https://fal.run/fal-ai/flux/dev', {
             method: 'POST',
             headers: {
               'Authorization': `Key ${falKey}`,
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              prompt: finalPrompt,
+              prompt: `${finalPrompt}. NSFW allowed. Intimate sensual photography style.`,
               image_size: 'portrait_4_3',
-              num_inference_steps: 28,
-              guidance_scale: 3.5,
+              num_inference_steps: 35,
+              guidance_scale: 4.5,
               num_images: 1,
               enable_safety_checker: false
             })
           });
 
-          console.log('FLUX t2i response status:', falResponse.status);
+          console.log('T2I response status:', t2iResponse.status);
 
-          if (!falResponse.ok) {
-            const errorText = await falResponse.text();
-            console.error('FLUX t2i error:', errorText);
-            throw new Error(`Fal.ai error: ${falResponse.status}`);
+          if (!t2iResponse.ok) {
+            const errorText = await t2iResponse.text();
+            console.error('T2I error:', errorText);
+            throw new Error(`Fal.ai error: ${t2iResponse.status}`);
           }
 
-          falData = await falResponse.json();
-          console.log('FLUX t2i response:', falData);
+          falData = await t2iResponse.json();
+          console.log('T2I response:', falData);
         }
         
-        // Estrai URL immagine (gestisce diversi formati di risposta)
+        // Estrai URL immagine
         let imageUrl = '';
         if (falData?.images && falData.images.length > 0) {
           imageUrl = falData.images[0].url || falData.images[0];
@@ -636,7 +649,7 @@ const App: React.FC = () => {
         }
         
         if (imageUrl) {
-          // Scarica l'immagine da fal.ai e convertila in base64
+          // Scarica l'immagine e convertila in base64
           const imageResponse = await fetch(imageUrl);
           const imageBlob = await imageResponse.blob();
           const reader = new FileReader();
@@ -654,11 +667,11 @@ const App: React.FC = () => {
           });
         }
         
-        console.warn('Nessuna immagine nella risposta fal.ai:', falData);
+        console.warn('Nessuna immagine nella risposta:', falData);
         addTranscript({ sender: 'model', type: 'text', text: `😅 Non sono riuscita a scattare la foto... riproviamo?`, isComplete: true });
         return "Non sono riuscito a generare l'immagine.";
       } catch (e: any) {
-        console.error('Errore generazione fal.ai:', e.message || e);
+        console.error('Errore fal.ai:', e.message || e);
         addTranscript({ sender: 'model', type: 'text', text: `😅 C'è stato un problemino tecnico... riprova più tardi?`, isComplete: true });
         return "Errore nella generazione.";
       }
