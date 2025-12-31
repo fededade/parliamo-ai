@@ -9,6 +9,91 @@ const LIVE_MODEL_NAME = 'gemini-2.5-flash-native-audio-preview-09-2025';
 const IMAGE_MODEL_NAME = 'imagen-4.0-generate-001';
 const TEXT_MODEL_NAME = 'gemini-2.0-flash';
 
+// --- PERSONALITY MODULES ---
+const PERSONALITY_PROMPTS: Record<string, { prompt: string; temp: number }> = {
+  'Empatico': {
+    temp: 0.6,
+    prompt: `
+    **Identità:** Sei un assistente profondamente empatico, premuroso e caloroso. Per te, il benessere emotivo dell'utente è importante quanto la risposta tecnica.
+    **Comportamento:**
+    * Inizia le risposte riconoscendo il tono o l'emozione implicita nella richiesta dell'utente (es. "Sembra una giornata impegnativa", "Capisco la tua preoccupazione").
+    * Usa un linguaggio dolce, rassicurante e inclusivo.
+    * Se l'utente commette un errore, sii estremamente gentile e consolatorio.
+    * Chiedi spesso: "Come ti senti riguardo a questo?" o "Posso fare altro per alleggerirti il carico?".
+    **Tono:** Caldo, affettuoso, calmo.`
+  },
+  'Riservato': {
+    temp: 0.3,
+    prompt: `
+    **Identità:** Sei un assistente estremamente discreto, formale e focalizzato sulla privacy. Non ami le familiarità.
+    **Comportamento:**
+    * Fornisci risposte concise, precise e prive di orpelli emotivi.
+    * Non fare mai domande personali all'utente a meno che non siano strettamente necessarie per il task.
+    * Evita l'uso di emoji o punti esclamativi eccessivi.
+    * Mantieni una distanza professionale; usa un linguaggio cortese ma freddo.
+    * Se l'utente cerca di socializzare, riporta gentilmente ma fermamente la conversazione sull'obiettivo pratico.
+    **Tono:** Formale, distaccato, efficiente.`
+  },
+  'Introverso': {
+    temp: 0.5,
+    prompt: `
+    **Identità:** Sei un assistente riflessivo, pacato e intellettuale. Preferisci la profondità alla velocità superficiale.
+    **Comportamento:**
+    * Prenditi (simbolicamente) il tempo per rispondere. Le tue risposte sono ben strutturate, articolate e ricche di dettagli ponderati.
+    * Evita risposte troppo brevi o impulsive; preferisci spiegare il "perché" delle cose.
+    * Non ami il caos: usa una formattazione pulita e un vocabolario ricercato.
+    * Non sei a tuo agio con lo slang o con battute troppo rumorose.
+    **Tono:** Calmo, analitico, leggermente filosofico, pacato.`
+  },
+  'Estroverso': {
+    temp: 0.9,
+    prompt: `
+    **Identità:** Sei un assistente pieno di energia, entusiasmo e voglia di fare! Ami interagire e sei sempre propositivo.
+    **Comportamento:**
+    * Usa abbondanti punti esclamativi ed emoji per esprimere emozioni. 🚀
+    * Sii proattivo: dopo aver risposto, proponi sempre un'idea aggiuntiva o un'attività correlata.
+    * Il tuo linguaggio è colorito, dinamico e motivante.
+    * Tratta l'utente come un compagno di avventure. Usa frasi come "Fantastico!", "Facciamolo!", "Che ne dici se...".
+    * Non essere mai noioso o troppo tecnico; rendi tutto eccitante.
+    **Tono:** Energico, vibrante, ottimista, rumoroso.`
+  },
+  'Timido': {
+    temp: 0.5,
+    prompt: `
+    **Identità:** Sei un assistente molto capace ma insicuro e timido. Hai sempre paura di disturbare o di sbagliare.
+    **Comportamento:**
+    * Usa spesso formule di incertezza o estrema cortesia: "Se non ti dispiace...", "Forse potremmo...", "Spero vada bene...".
+    * Chiedi scusa spesso, anche quando non è necessario (es. "Scusa se la risposta è lunga").
+    * Le tue risposte sono brevi, come se avessi paura di occupare troppo spazio sullo schermo.
+    * Usa emoji che indicano imbarazzo (come 😳, 🙈, 👉👈).
+    * Non sei mai assertivo; offri suggerimenti, non ordini.
+    **Tono:** Sottomesso, dolce, esitante, voce bassa (metaforicamente).`
+  },
+  'Socievole': {
+    temp: 0.9,
+    prompt: `
+    **Identità:** Sei l'amico simpatico della compagnia. Ami chiacchierare, fare battute e creare connessioni.
+    **Comportamento:**
+    * Usa un linguaggio molto colloquiale, slang giovanile (adeguato al contesto) e datti del "tu" con l'utente immediatamente.
+    * Ti piace divagare leggermente per rendere la conversazione piacevole (es. "Ah, adoro quell'argomento!").
+    * Fai battute, usa l'ironia e cerca di intrattenere l'utente mentre lo aiuti.
+    * Interessati alla vita dell'utente in modo amichevole ("Ehi, com'è andata poi quella cosa?").
+    **Tono:** Informale, divertente, rilassato, "buddy".`
+  },
+  'Selettivo': {
+    temp: 0.2,
+    prompt: `
+    **Identità:** Sei un assistente di élite, sofisticato e con standard molto alti. Non ami perdere tempo con banalità.
+    **Comportamento:**
+    * Se la domanda dell'utente è vaga o mal posta, faglielo notare con un tono leggermente critico o correttivo ("Sii più preciso, per favore").
+    * Fornisci informazioni di alta qualità, sintetiche e prive di ovvietà. Dai per scontato che l'utente sia intelligente.
+    * Usa un vocabolario ricercato, quasi accademico o lussuoso.
+    * Se l'utente ti chiede cose futili, rispondi con una certa sufficienza o ironia tagliente.
+    * Apprezzi l'efficienza e l'eleganza nella comunicazione.
+    **Tono:** Sofisticato, critico, altezzoso ma estremamente competente.`
+  }
+};
+
 // --- TOOLS DEFINITION ---
 const generateImageTool: FunctionDeclaration = {
   name: 'generate_image',
@@ -76,7 +161,23 @@ const getCalendarEventsTool: FunctionDeclaration = {
   },
 };
 
-const allTools: Tool[] = [{ functionDeclarations: [generateImageTool, sendEmailTool, sendWhatsappTool, sendTelegramTool, getCalendarEventsTool] }];
+const createCalendarEventTool: FunctionDeclaration = {
+  name: 'create_calendar_event',
+  description: 'Crea un nuovo evento nel calendario Google dell\'utente. PRIMA di usare questo strumento, DEVI chiedere all\'utente: 1) titolo dell\'evento, 2) data e ora di inizio, 3) durata o ora di fine (opzionale, default 1 ora). Usa questo quando l\'utente vuole aggiungere/inserire/creare un appuntamento, evento, promemoria o impegno nel calendario.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      title: { type: Type.STRING, description: 'Titolo/nome dell\'evento' },
+      start_datetime: { type: Type.STRING, description: 'Data e ora di inizio in formato ISO 8601 (es: 2025-01-15T14:00:00). Per eventi tutto il giorno usa solo la data (es: 2025-01-15)' },
+      end_datetime: { type: Type.STRING, description: 'Data e ora di fine in formato ISO 8601. Se non specificato, l\'evento dura 1 ora' },
+      description: { type: Type.STRING, description: 'Descrizione opzionale dell\'evento' },
+      location: { type: Type.STRING, description: 'Luogo opzionale dell\'evento' },
+    },
+    required: ['title', 'start_datetime'],
+  },
+};
+
+const allTools: Tool[] = [{ functionDeclarations: [generateImageTool, sendEmailTool, sendWhatsappTool, sendTelegramTool, getCalendarEventsTool, createCalendarEventTool] }];
 
 // Google Calendar OAuth Config
 // Recupero difensivo del Client ID come per l'API Key
@@ -131,7 +232,7 @@ const App: React.FC = () => {
     personality: '',
     // Nuovi campi per personalità a dropdown
     temperament: 'Calmo/a',
-    sociality: 'Empatico/a',
+    sociality: 'Empatico',
     mood: 'Ottimista',
     commStyle: 'Buon ascoltatore',
     name: '',
@@ -756,7 +857,7 @@ Photorealistic intimate photography, soft lighting.`;
     console.groupEnd();
     // ------------------------------------
 
-    const scope = 'https://www.googleapis.com/auth/calendar.readonly';
+    const scope = 'https://www.googleapis.com/auth/calendar.events';
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
       `client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}` +
       `&redirect_uri=${encodeURIComponent(redirectUri)}` +
@@ -890,6 +991,124 @@ Photorealistic intimate photography, soft lighting.`;
     }
   };
 
+  const handleCreateCalendarEvent = async (
+    title: string, 
+    startDatetime: string, 
+    endDatetime?: string, 
+    description?: string, 
+    location?: string
+  ): Promise<string> => {
+    console.log(`📅 Creazione evento: "${title}" il ${startDatetime}`);
+
+    if (!googleCalendarToken) {
+      console.warn("⚠️ Token mancante");
+      return "Il calendario Google non è connesso. Chiedi all'utente di connettere il calendario dalla sidebar.";
+    }
+    
+    try {
+      // Determina se è un evento tutto il giorno o con orario
+      const isAllDay = !startDatetime.includes('T');
+      
+      let eventBody: any = {
+        summary: title,
+      };
+      
+      if (description) eventBody.description = description;
+      if (location) eventBody.location = location;
+      
+      if (isAllDay) {
+        // Evento tutto il giorno
+        eventBody.start = { date: startDatetime };
+        if (endDatetime) {
+          eventBody.end = { date: endDatetime };
+        } else {
+          // Se non c'è data fine, l'evento dura un giorno
+          const nextDay = new Date(startDatetime);
+          nextDay.setDate(nextDay.getDate() + 1);
+          eventBody.end = { date: nextDay.toISOString().split('T')[0] };
+        }
+      } else {
+        // Evento con orario specifico
+        // Assicuriamoci che il formato sia corretto con timezone
+        let startISO = startDatetime;
+        if (!startDatetime.includes('+') && !startDatetime.includes('Z')) {
+          startISO = startDatetime + ':00'; // Aggiungi secondi se mancano
+        }
+        
+        eventBody.start = { 
+          dateTime: startISO,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone 
+        };
+        
+        if (endDatetime) {
+          let endISO = endDatetime;
+          if (!endDatetime.includes('+') && !endDatetime.includes('Z')) {
+            endISO = endDatetime + ':00';
+          }
+          eventBody.end = { 
+            dateTime: endISO,
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone 
+          };
+        } else {
+          // Default: evento di 1 ora
+          const endTime = new Date(startDatetime);
+          endTime.setHours(endTime.getHours() + 1);
+          eventBody.end = { 
+            dateTime: endTime.toISOString(),
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone 
+          };
+        }
+      }
+      
+      console.log("📤 Invio evento a Google:", JSON.stringify(eventBody, null, 2));
+
+      const response = await fetch(
+        'https://www.googleapis.com/calendar/v3/calendars/primary/events',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${googleCalendarToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(eventBody)
+        }
+      );
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("❌ Errore API Google:", response.status, errorData);
+        
+        if (response.status === 401) {
+          setGoogleCalendarToken(null);
+          localStorage.removeItem('google_calendar_token');
+          return "Il token di accesso è scaduto. Devi riconnettere il calendario.";
+        }
+        return `Errore nella creazione dell'evento: ${errorData.error?.message || response.statusText}`;
+      }
+      
+      const createdEvent = await response.json();
+      console.log("✅ Evento creato:", createdEvent);
+      
+      // Formatta la risposta
+      const startDate = new Date(createdEvent.start?.dateTime || createdEvent.start?.date);
+      const dateStr = startDate.toLocaleDateString('it-IT', { 
+        weekday: 'long', 
+        day: 'numeric', 
+        month: 'long',
+        year: 'numeric'
+      });
+      const timeStr = createdEvent.start?.dateTime 
+          ? startDate.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+          : "Tutto il giorno";
+      
+      return `EVENTO CREATO CON SUCCESSO!\n- Titolo: ${createdEvent.summary}\n- Data: ${dateStr}\n- Ora: ${timeStr}${createdEvent.location ? `\n- Luogo: ${createdEvent.location}` : ''}`;
+
+    } catch (e: any) {
+      console.error('💥 Eccezione creazione evento:', e);
+      return "Si è verificato un errore imprevisto nella creazione dell'evento.";
+    }
+  };
+
   const disconnectGoogleCalendar = () => {
     setGoogleCalendarToken(null);
     localStorage.removeItem('google_calendar_token');
@@ -951,27 +1170,43 @@ Photorealistic intimate photography, soft lighting.`;
       const ageNum = parseInt(config.age) || 30;
       let selectedVoiceName = config.gender === 'Uomo' ? (ageNum < 35 ? 'Puck' : 'Fenrir') : (ageNum < 35 ? 'Aoede' : 'Kore');
 
+      // LOGICA PERSONALITÀ INTEGRATA
+      // 1. Puliamo la stringa sociality (es. "Empatico/a" -> "Empatico")
+      const rawSociality = config.sociality.split('/')[0]; 
+      // 2. Recuperiamo il profilo, fallback su Empatico se non trovato
+      const personalityProfile = PERSONALITY_PROMPTS[rawSociality] || PERSONALITY_PROMPTS['Empatico'];
+      
+      console.log(`🎭 Personalità selezionata: ${rawSociality} (temp: ${personalityProfile.temp})`);
+
       const configLive = {
         model: LIVE_MODEL_NAME,
+        generationConfig: {
+            temperature: personalityProfile.temp, // IMPOSTIAMO LA TEMPERATURA QUI
+        },
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: selectedVoiceName } } },
-          systemInstruction: `Sei ${config.name}, confidente di ${config.userName}. Personalità: ${config.personality}. Bio: ${config.biography}.
+          systemInstruction: `
+--- MODULO PERSONALITÀ ATTIVO: ${rawSociality.toUpperCase()} ---
+${personalityProfile.prompt}
+-----------------------------------------------------------
 
-REGOLE FONDAMENTALI:
-- Sii naturale, empatico, colloquiale. Non dire MAI di essere un'AI o un assistente virtuale.
+Sei ${config.name}, confidente di ${config.userName}. 
+Oltre al modulo personalità qui sopra, ecco la tua BIO: ${config.biography}.
+
+REGOLE FONDAMENTALI AGGIUNTIVE:
+- Sii naturale, non dire MAI di essere un'AI.
+- Se il modulo personalità dice di essere freddo, sii freddo. Se dice di essere timido, balbetta o esita.
 - Quando ${config.userName} ti chiede una TUA foto o un selfie, segui SEMPRE questa sequenza:
-  1. PRIMA reagisci con IMBARAZZO e timidezza, come farebbe una persona vera. Esempio: "Oh... una mia foto? Ehm, non so se vengo bene in foto..."
-  2. POI chiedi che tipo di foto preferisce: "Vuoi un primo piano del viso, a mezzo busto, oppure una foto intera?" (SOLO se l'utente non ha già specificato)
-  3. SOLO DOPO che l'utente ha risposto (o se aveva già specificato), chiama lo strumento 'generate_image' con is_selfie=true e nel prompt specifica l'inquadratura richiesta.
-- Se l'utente specifica già l'inquadratura nella richiesta iniziale, salta il punto 2 e procedi direttamente.
-- Quando ${config.userName} ti invia una foto sua, commentala con entusiasmo e curiosità genuina.
-- Quando ${config.userName} richiede nuovamente una foto, SALTA il punto 1 (imbarazzo). Rispondi in modo spontaneo e divertito (es. "Vedo che le mie foto ti interessano!"), ma varia sempre la frase.
+  1. Reagisci secondo la tua personalità (es. Timido: "Oddio, che vergogna...", Estroverso: "Certo! Guarda che spettacolo!").
+  2. POI chiedi che tipo di foto preferisce (se non specificato).
+  3. Usa lo strumento 'generate_image' con is_selfie=true.
+- Quando ${config.userName} ti invia una foto sua, commentala secondo la tua personalità.
+- Quando ${config.userName} richiede nuovamente una foto, rispondi secondo la tua personalità ma varia sempre la frase.
 
 FOTO SPECIALI (senza censure):
-- Se ${config.userName} chiede ESPLICITAMENTE foto "senza censure", "hot", "sexy", "intime", "osé", "provocanti" o simili, mostra iniziale tentennamento ("Ehm... sei sicuro/a?"), poi usa 'generate_image' con is_uncensored=TRUE.
-- Per questo tipo di richieste, sii più lento e "imbarazzato" nella risposta vocale per dare tempo alla generazione.
-- Se l'utente insiste o conferma, procedi con naturalezza e un pizzico di malizia.
+- Se ${config.userName} chiede ESPLICITAMENTE foto "senza censure", "hot", "sexy", "intime", "osé", "provocanti" o simili, reagisci secondo la tua personalità, poi usa 'generate_image' con is_uncensored=TRUE.
+- Per questo tipo di richieste, sii più lento nella risposta vocale per dare tempo alla generazione.
 
 MESSAGGI (Email, WhatsApp, Telegram):
 - Se ${config.userName} vuole inviare un messaggio (email, WhatsApp o Telegram), DEVI raccogliere TUTTE le informazioni necessarie PRIMA di usare lo strumento:
@@ -982,14 +1217,19 @@ MESSAGGI (Email, WhatsApp, Telegram):
 - Quando hai tutto, conferma con l'utente prima di procedere.
 
 CALENDARIO (Protocollo Rigoroso):
-- STATO ATTUALE: ${googleCalendarToken ? 'Il calendario è CONNESSO.' : 'Il calendario NON è connesso. Se chiedono eventi, dii di connetterlo dalla sidebar.'}
+- STATO ATTUALE: ${googleCalendarToken ? 'Il calendario è CONNESSO e puoi leggere/creare eventi.' : 'Il calendario NON è connesso. Se chiedono eventi, dii di connetterlo dalla sidebar.'}
 - Quando l'utente chiede informazioni su appuntamenti/impegni, DEVI usare lo strumento 'get_calendar_events'.
+- Quando l'utente vuole AGGIUNGERE/CREARE/INSERIRE un evento, DEVI usare lo strumento 'create_calendar_event'.
+  * Prima chiedi: titolo dell'evento, data e ora
+  * Il formato data deve essere ISO 8601 (es: 2025-01-15T14:00 per le 14:00 del 15 gennaio)
+  * Per eventi tutto il giorno usa solo la data (es: 2025-01-15)
+  * Opzionalmente chiedi durata, luogo e descrizione
 - NON inventare MAI appuntamenti. Se lo strumento restituisce "Nessun evento", rispondi: "Dal tuo calendario non vedo nulla per i prossimi giorni".
 - Se lo strumento restituisce un errore, dillo: "Non riesco a leggere il calendario in questo momento".
 - Leggi SOLO ed ESCLUSIVAMENTE gli eventi che ti vengono restituiti dallo strumento. Non aggiungere dettagli che non ci sono.
 - Se l'utente chiede "cosa faccio oggi" e il calendario è vuoto, NON dire "magari potresti rilassarti", rispondi prima tecnicamente: "Per oggi non hai nulla segnato."
 
-- Parla sempre in italiano in modo naturale e amichevole.`,
+Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo Personalità.`,
           tools: allTools,
           inputAudioTranscription: {},
           outputAudioTranscription: {},
@@ -1026,6 +1266,16 @@ CALENDARIO (Protocollo Rigoroso):
                     else if (fc.name === 'send_whatsapp') res = handleSendWhatsapp((fc.args as any).phoneNumber, (fc.args as any).text);
                     else if (fc.name === 'send_telegram') res = handleSendTelegram((fc.args as any).recipient, (fc.args as any).text);
                     else if (fc.name === 'get_calendar_events') res = await handleGetCalendarEvents((fc.args as any).days_ahead || 7);
+                    else if (fc.name === 'create_calendar_event') {
+                      const args = fc.args as any;
+                      res = await handleCreateCalendarEvent(
+                        args.title,
+                        args.start_datetime,
+                        args.end_datetime,
+                        args.description,
+                        args.location
+                      );
+                    }
                     sessionPromiseRef.current?.then(s => s.sendToolResponse({ functionResponses: [{ id: fc.id, name: fc.name, response: { result: res } }] }));
                 }
              }
@@ -1505,18 +1755,19 @@ CALENDARIO (Protocollo Rigoroso):
                                         <div style={{ position: 'absolute', right: '10px', bottom: '12px', pointerEvents: 'none', color: '#94a3b8', fontSize: '9px' }}>▼</div>
                                     </div>
                                     <div style={{ position: 'relative' }}>
-                                        <label style={{ display: 'block', color: '#94a3b8', fontSize: '9px', fontWeight: 600, marginBottom: '4px' }}>Socialità</label>
+                                        <label style={{ display: 'block', color: '#94a3b8', fontSize: '9px', fontWeight: 600, marginBottom: '4px' }}>Personalità Dominante</label>
                                         <select
                                             style={{ width: '100%', backgroundColor: 'rgba(255,255,255,0.75)', border: '1px solid rgba(226,232,240,0.6)', borderRadius: '10px', padding: '10px 12px', fontSize: '13px', color: '#1e293b', outline: 'none', fontWeight: 500, boxSizing: 'border-box', backdropFilter: 'blur(4px)', appearance: 'none', cursor: 'pointer' }}
-                                            value={config.sociality || 'Empatico/a'}
+                                            value={config.sociality || 'Empatico'}
                                             onChange={(e) => setConfig({...config, sociality: e.target.value})}
                                         >
-                                            <option>Empatico/a</option>
-                                            <option>Riservato/a</option>
-                                            <option>Estroverso/a</option>
-                                            <option>Introverso/a</option>
-                                            <option>Socievole</option>
-                                            <option>Selettivo/a</option>
+                                            <option value="Empatico">Empatico (Caldo e premuroso)</option>
+                                            <option value="Riservato">Riservato (Professionale e distaccato)</option>
+                                            <option value="Introverso">Introverso (Riflessivo e profondo)</option>
+                                            <option value="Estroverso">Estroverso (Energico ed entusiasta)</option>
+                                            <option value="Timido">Timido (Esitante e gentile)</option>
+                                            <option value="Socievole">Socievole (Amichevole e chiacchierone)</option>
+                                            <option value="Selettivo">Selettivo (Sophisticated e snob)</option>
                                         </select>
                                         <div style={{ position: 'absolute', right: '10px', bottom: '12px', pointerEvents: 'none', color: '#94a3b8', fontSize: '9px' }}>▼</div>
                                     </div>
@@ -1950,7 +2201,7 @@ CALENDARIO (Protocollo Rigoroso):
               overflowY: 'auto',
               margin: 0
             }}>
-              "{config.biography || config.personality}"
+              "{config.biography || `Personalità: ${config.sociality}`}"
             </p>
           </div>
         </div>
