@@ -1029,10 +1029,16 @@ Photorealistic intimate photography, soft lighting.`;
         }
       } else {
         // Evento con orario specifico
-        // Assicuriamoci che il formato sia corretto con timezone
+        // Assicuriamoci che il formato sia corretto
         let startISO = startDatetime;
-        if (!startDatetime.includes('+') && !startDatetime.includes('Z')) {
-          startISO = startDatetime + ':00'; // Aggiungi secondi se mancano
+        
+        // Conta i ":" dopo la T per capire se ci sono già i secondi
+        const timePartStart = startDatetime.split('T')[1] || '';
+        const colonCountStart = (timePartStart.match(/:/g) || []).length;
+        
+        // Se c'è solo 1 ":" (es: 19:00), aggiungi i secondi
+        if (colonCountStart === 1 && !startDatetime.includes('+') && !startDatetime.includes('Z')) {
+          startISO = startDatetime + ':00';
         }
         
         eventBody.start = { 
@@ -1042,7 +1048,10 @@ Photorealistic intimate photography, soft lighting.`;
         
         if (endDatetime) {
           let endISO = endDatetime;
-          if (!endDatetime.includes('+') && !endDatetime.includes('Z')) {
+          const timePartEnd = endDatetime.split('T')[1] || '';
+          const colonCountEnd = (timePartEnd.match(/:/g) || []).length;
+          
+          if (colonCountEnd === 1 && !endDatetime.includes('+') && !endDatetime.includes('Z')) {
             endISO = endDatetime + ':00';
           }
           eventBody.end = { 
@@ -1051,7 +1060,7 @@ Photorealistic intimate photography, soft lighting.`;
           };
         } else {
           // Default: evento di 1 ora
-          const endTime = new Date(startDatetime);
+          const endTime = new Date(startISO);
           endTime.setHours(endTime.getHours() + 1);
           eventBody.end = { 
             dateTime: endTime.toISOString(),
