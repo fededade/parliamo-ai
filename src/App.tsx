@@ -3,7 +3,7 @@ import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type, To
 import { TranscriptItem, AssistantConfig } from './types';
 import { createBlob, decode, decodeAudioData } from './utils/audio';
 import { AudioVisualizer } from './components/AudioVisualizer';
-import { Mic, MicOff, PhoneOff, User, Bot, Sparkles, Image as ImageIcon, ArrowRight, Loader2, Heart, Info, Mail, MessageCircle, ExternalLink, Download, Wand2, UserCircle, Sliders, Music2, Menu, Camera, Send, Calendar, CalendarCheck } from 'lucide-react';
+import { Mic, MicOff, PhoneOff, User, Bot, Sparkles, Image as ImageIcon, ArrowRight, Loader2, Heart, Info, Mail, MessageCircle, ExternalLink, Download, Wand2, UserCircle, Sliders, Music2, Menu, Camera, Send, Calendar, CalendarCheck, RefreshCw } from 'lucide-react';
 
 const LIVE_MODEL_NAME = 'gemini-2.5-flash-native-audio-preview-09-2025';
 const IMAGE_MODEL_NAME = 'imagen-4.0-generate-001';
@@ -2347,6 +2347,45 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
               )}
           </div>
           
+          {/* Pulsante Nuovo Assistente */}
+          <button
+            onClick={() => { 
+              if(window.confirm('Vuoi creare un nuovo assistente? La configurazione attuale verrà cancellata.')) { 
+                resetConfiguration(); 
+              } 
+            }}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              padding: '10px 14px',
+              marginTop: '12px',
+              backgroundColor: 'transparent',
+              color: '#64748b',
+              borderRadius: '10px',
+              border: '1px dashed #cbd5e1',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: 500,
+              transition: 'all 0.2s'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.backgroundColor = '#f1f5f9';
+              e.currentTarget.style.borderColor = '#94a3b8';
+              e.currentTarget.style.color = '#475569';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+              e.currentTarget.style.borderColor = '#cbd5e1';
+              e.currentTarget.style.color = '#64748b';
+            }}
+          >
+            <RefreshCw size={14} />
+            Nuovo Assistente
+          </button>
+          
           {/* Status indicator */}
           <div style={{ 
             display: 'flex', 
@@ -2796,6 +2835,35 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
                   {GOOGLE_CLIENT_ID ? "Connetti Google Calendar" : "Configura Calendar"}
                 </button>
               )}
+          </div>
+          
+          {/* Pulsante Nuovo Assistente Mobile */}
+          <div style={{ padding: '8px 16px 0 16px' }}>
+            <button
+              onClick={() => { 
+                if(window.confirm('Vuoi creare un nuovo assistente? La configurazione attuale verrà cancellata.')) { 
+                  resetConfiguration(); 
+                } 
+              }}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                padding: '10px 14px',
+                backgroundColor: 'transparent',
+                color: '#64748b',
+                borderRadius: '10px',
+                border: '1px dashed #cbd5e1',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: 500
+              }}
+            >
+              <RefreshCw size={14} />
+              Nuovo Assistente
+            </button>
           </div>
           {/* --- FINE NUOVO BLOCCO --- */}          
 	{/* Riga pulsanti */}
