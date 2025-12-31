@@ -1948,6 +1948,46 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
                             )}
                         </div>
 
+                        {/* Section: Cosa posso fare per te */}
+                        <div style={{ 
+                          marginBottom: '24px',
+                          padding: '20px',
+                          backgroundColor: 'rgba(147, 51, 234, 0.05)',
+                          borderRadius: '16px',
+                          border: '1px solid rgba(147, 51, 234, 0.1)'
+                        }}>
+                            <h3 style={{ 
+                              fontSize: '16px', 
+                              fontWeight: 700, 
+                              color: '#7c3aed', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              gap: '8px', 
+                              marginBottom: '14px' 
+                            }}>
+                                <Sparkles size={18} style={{ color: '#9333ea' }}/> Cosa posso fare per te
+                            </h3>
+                            <div style={{ 
+                              fontSize: '14px', 
+                              color: '#475569', 
+                              lineHeight: 1.7,
+                              fontWeight: 450
+                            }}>
+                              <p style={{ margin: '0 0 12px 0' }}>
+                                🎧 <strong>Posso ascoltarti</strong>, darti consigli e tenerti compagnia ogni volta che ne hai bisogno.
+                              </p>
+                              <p style={{ margin: '0 0 12px 0' }}>
+                                💼 <strong>Posso essere il tuo assistente</strong>: so mandare email, messaggi su WhatsApp e Telegram.
+                              </p>
+                              <p style={{ margin: '0 0 12px 0' }}>
+                                📅 <strong>Se connetti Google Calendar</strong>, posso ricordarti gli impegni o inserire nuovi appuntamenti.
+                              </p>
+                              <p style={{ margin: 0, fontStyle: 'italic', color: '#7c3aed' }}>
+                                ✨ Saremo inseparabili!
+                              </p>
+                            </div>
+                        </div>
+
                         {/* PULSANTE CREAZIONE - Alla fine del form */}
                         <button
                           onClick={isFormComplete && !isGeneratingProfile ? handleConfigSubmit : undefined}
