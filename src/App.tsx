@@ -850,22 +850,11 @@ Photorealistic, 8k, highly detailed.`;
   const initGoogleCalendar = () => {
     if (!GOOGLE_CLIENT_ID) {
       console.log('Google Calendar Client ID non configurato');
-      setError("Google Client ID non configurato! Aggiungi VITE_GOOGLE_CLIENT_ID nel tuo file .env per usare il calendario.");
+      // ...gestione errore (puoi lasciare il codice esistente per l'errore)...
       return;
     }
     
-    // Crea l'URL per OAuth
     const redirectUri = window.location.origin;
-    
-    // --- DEBUG CRUCIALE PER L'UTENTE ---
-    console.group("🔧 CONFIGURAZIONE GOOGLE CALENDAR RICHIESTA");
-    console.log("%cATTENZIONE SVILUPPATORE!", "color: red; font-size: 16px; font-weight: bold;");
-    console.log("Se vedi errore 400: redirect_uri_mismatch, devi aggiungere questo esatto URL alla Google Cloud Console:");
-    console.log(`%c${redirectUri}`, "color: blue; font-size: 14px; text-decoration: underline;");
-    console.log("Vai su: https://console.cloud.google.com/apis/credentials > Tuo Client ID > Authorized redirect URIs");
-    console.groupEnd();
-    // ------------------------------------
-
     const scope = 'https://www.googleapis.com/auth/calendar.events';
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
       `client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}` +
@@ -874,56 +863,64 @@ Photorealistic, 8k, highly detailed.`;
       `&scope=${encodeURIComponent(scope)}` +
       `&prompt=consent`;
     
-    // Apri popup per autorizzazione
+    // 1. Aggiungi il listener per il messaggio PRIMA di aprire il popup
+    const handleAuthMessage = (event: MessageEvent) => {
+      // Verifica sicurezza: accetta messaggi solo dalla nostra stessa origine
+      if (event.origin !== window.location.origin) return;
+      
+      if (event.data && event.data.type === 'GOOGLE_AUTH_SUCCESS') {
+        const token = event.data.token;
+        console.log("📩 Token ricevuto dal popup!", token);
+        
+        setGoogleCalendarToken(token);
+        localStorage.setItem('google_calendar_token', token);
+        
+        // Rimuovi il listener una volta fatto
+        window.removeEventListener('message', handleAuthMessage);
+      }
+    };
+
+    window.addEventListener('message', handleAuthMessage);
+
+    // 2. Apri il popup
     const popup = window.open(authUrl, 'google-auth', 'width=500,height=600');
     
     if (!popup) {
-        setError("Il browser ha bloccato il popup. Per favore consenti i popup per questo sito per connettere Calendar.");
+        setError("Il browser ha bloccato il popup. Per favore consenti i popup.");
+        window.removeEventListener('message', handleAuthMessage); // Pulisci se fallisce
         return;
     }
-    
-    // Ascolta per il token dalla popup
-    const checkPopup = setInterval(() => {
-      try {
-        if (popup?.location?.hash) {
-          const hash = popup.location.hash.substring(1);
-          const params = new URLSearchParams(hash);
-          const accessToken = params.get('access_token');
-          if (accessToken) {
-            setGoogleCalendarToken(accessToken);
-            localStorage.setItem('google_calendar_token', accessToken);
-            popup.close();
-            clearInterval(checkPopup);
-            console.log('Google Calendar connesso!');
-          }
-        }
-      } catch (e) {
-        // Cross-origin error - popup non ancora reindirizzata
-      }
-      if (popup?.closed) {
-        clearInterval(checkPopup);
-      }
-    }, 500);
   };
 
-  // Controlla se c'è un token salvato o nell'URL al caricamento
+ // Controlla se c'è un token salvato o nell'URL al caricamento
   useEffect(() => {
-    // Controlla localStorage
+    // 1. Controlla localStorage
     const savedToken = localStorage.getItem('google_calendar_token');
     if (savedToken) {
       setGoogleCalendarToken(savedToken);
     }
     
-    // Controlla se siamo tornati dall'OAuth (token nell'URL)
+    // 2. Controlla se siamo tornati dall'OAuth (token nell'URL)
     if (window.location.hash.includes('access_token')) {
       const hash = window.location.hash.substring(1);
       const params = new URLSearchParams(hash);
       const accessToken = params.get('access_token');
+      
       if (accessToken) {
-        setGoogleCalendarToken(accessToken);
-        localStorage.setItem('google_calendar_token', accessToken);
-        // Pulisci l'URL
-        window.history.replaceState({}, document.title, window.location.pathname);
+        // --- LOGICA POPUP: Se siamo in una finestra aperta da un'altra ---
+        if (window.opener) {
+          console.log("📤 Invio token alla finestra principale e chiudo il popup...");
+          // Invia il token alla finestra genitore
+          window.opener.postMessage({ type: 'GOOGLE_AUTH_SUCCESS', token: accessToken }, window.location.origin);
+          // Chiudi questa finestra popup
+          window.close();
+        } else {
+          // --- LOGICA NORMALE: Se non siamo in un popup ---
+          setGoogleCalendarToken(accessToken);
+          localStorage.setItem('google_calendar_token', accessToken);
+          // Pulisci l'URL
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
       }
     }
   }, []);
