@@ -120,7 +120,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
         border: '1px solid rgba(255,255,255,0.8)'
       }}>
         {/* Logo */}
-        <{/* --- INIZIO BLOCCO LOGO E TITOLO --- */}
+        {/* --- INIZIO BLOCCO LOGO E TITOLO --- */}
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
           
           {/* Logo */}
