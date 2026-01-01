@@ -120,41 +120,48 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
         border: '1px solid rgba(255,255,255,0.8)'
       }}>
         {/* Logo */}
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <div style={{
-            width: '72px',
-            height: '72px',
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, #9333ea 0%, #7c3aed 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 16px',
-            boxShadow: '0 8px 24px rgba(147, 51, 234, 0.3)'
-          }}>
-            <span style={{ fontSize: '32px' }}>🤗</span>
-          </div>
+        <{/* --- INIZIO BLOCCO LOGO E TITOLO --- */}
+        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+          
+          {/* Logo */}
+          <img 
+            src="/logo.png" 
+            alt="Ti Ascolto Logo" 
+            style={{
+              width: '100px',         // Regola la grandezza qui
+              height: 'auto',
+              marginBottom: '16px',
+              borderRadius: '16px',   // Arrotonda leggermente gli angoli del logo
+              boxShadow: '0 4px 12px rgba(147, 51, 234, 0.15)' // Un leggero alone viola
+            }}
+          />
+
+          {/* Titolo */}
           <h1 style={{
-            fontSize: '28px',
+            fontSize: '32px',
             fontWeight: 800,
-            color: '#1e293b',
-            marginBottom: '8px',
-            fontFamily: "'Nunito', sans-serif"
+            background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            margin: '0 0 8px 0',      // Margine ridotto sotto
+            letterSpacing: '-0.02em'
           }}>
             Ti Ascolto
           </h1>
+
+          {/* Sottotitolo con la tua frase */}
           <p style={{
-            fontSize: '14px',
+            fontSize: '15px',
             color: '#64748b',
-            fontWeight: 500
+            fontWeight: 500,
+            margin: '0',
+            lineHeight: 1.5,
+            fontStyle: 'italic'
           }}>
-            {isForgotPassword 
-              ? 'Recupera la tua password' 
-              : isLogin 
-                ? 'Accedi al tuo account' 
-                : 'Crea il tuo account'}
+            l'app che sa ascoltare, capire, consigliare...
           </p>
         </div>
+        {/* --- FINE BLOCCO --- */}
 
         {/* Error/Success Messages */}
         {error && (
