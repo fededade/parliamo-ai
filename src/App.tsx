@@ -3,7 +3,10 @@ import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type, To
 import { TranscriptItem, AssistantConfig } from './types';
 import { createBlob, decode, decodeAudioData } from './utils/audio';
 import { AudioVisualizer } from './components/AudioVisualizer';
-import { Mic, MicOff, PhoneOff, User, Bot, Sparkles, Image as ImageIcon, ArrowRight, Loader2, Heart, Info, Mail, MessageCircle, ExternalLink, Download, Wand2, UserCircle, Sliders, Music2, Menu, Camera, Send, Calendar, CalendarCheck, RefreshCw } from 'lucide-react';
+import { Mic, MicOff, PhoneOff, User, Bot, Sparkles, Image as ImageIcon, ArrowRight, Loader2, Heart, Info, Mail, MessageCircle, ExternalLink, Download, Wand2, UserCircle, Sliders, Music2, Menu, Camera, Send, Calendar, CalendarCheck, RefreshCw, LogOut } from 'lucide-react';
+import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
+import { auth } from './firebase';
+import AuthScreen from './AuthScreen';
 
 const LIVE_MODEL_NAME = 'gemini-2.5-flash-native-audio-preview-09-2025';
 const IMAGE_MODEL_NAME = 'imagen-4.0-generate-001';
@@ -219,6 +222,36 @@ const AppLogo = ({ size = 48, className = "" }: { size?: number, className?: str
 };
 
 const App: React.FC = () => {
+  // === AUTHENTICATION STATE ===
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // Monitor auth state
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Logout function
+  const handleLogout = async () => {
+    if (window.confirm('Vuoi effettuare il logout?')) {
+      try {
+        await signOut(auth);
+        // Reset app state
+        localStorage.removeItem('ti_ascolto_config');
+        localStorage.removeItem('ti_ascolto_avatar');
+        localStorage.removeItem('ti_ascolto_configured');
+        setIsConfigured(false);
+        setAvatarUrl(null);
+      } catch (error) {
+        console.error('Logout error:', error);
+      }
+    }
+  };
+
   // Configuration State
   const [config, setConfig] = useState<AssistantConfig>({
     userName: '',
@@ -1381,6 +1414,37 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [isConnected]);
 
+  // === AUTHENTICATION CHECK ===
+  // Show loading while checking auth state
+  if (authLoading) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'linear-gradient(135deg, #fdf4ff 0%, #faf5ff 25%, #f5f3ff 50%, #eff6ff 75%, #f0fdfa 100%)',
+        fontFamily: 'Outfit, sans-serif'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <Loader2 size={48} style={{ color: '#9333ea', animation: 'spin 1s linear infinite' }} />
+          <p style={{ marginTop: '16px', color: '#64748b', fontWeight: 500 }}>Caricamento...</p>
+        </div>
+        <style>{`
+          @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
+  // Show login screen if not authenticated
+  if (!currentUser) {
+    return <AuthScreen onAuthSuccess={() => {}} />;
+  }
+
   // --- CONFIGURATION SCREEN (LIGHT THEME WATERCOLOR STYLE) ---
   if (!isConfigured) {
     return (
@@ -2400,6 +2464,61 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
             Nuovo Assistente
           </button>
           
+          {/* Pulsante Logout */}
+          <button
+            onClick={handleLogout}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              padding: '10px 14px',
+              marginTop: '8px',
+              backgroundColor: 'transparent',
+              color: '#ef4444',
+              borderRadius: '10px',
+              border: '1px dashed #fca5a5',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: 500,
+              transition: 'all 0.2s'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.backgroundColor = '#fef2f2';
+              e.currentTarget.style.borderColor = '#f87171';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+              e.currentTarget.style.borderColor = '#fca5a5';
+            }}
+          >
+            <LogOut size={14} />
+            Esci
+          </button>
+          
+          {/* User info */}
+          {currentUser && (
+            <div style={{
+              marginTop: '12px',
+              padding: '8px 12px',
+              backgroundColor: 'rgba(147, 51, 234, 0.05)',
+              borderRadius: '8px',
+              textAlign: 'center'
+            }}>
+              <p style={{ 
+                fontSize: '10px', 
+                color: '#64748b', 
+                margin: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}>
+                {currentUser.email}
+              </p>
+            </div>
+          )}
+          
           {/* Status indicator */}
           <div style={{ 
             display: 'flex', 
@@ -2877,6 +2996,30 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
             >
               <RefreshCw size={14} />
               Nuovo Assistente
+            </button>
+            
+            {/* Pulsante Logout Mobile */}
+            <button
+              onClick={handleLogout}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                padding: '10px 14px',
+                marginTop: '8px',
+                backgroundColor: 'transparent',
+                color: '#ef4444',
+                borderRadius: '10px',
+                border: '1px dashed #fca5a5',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: 500
+              }}
+            >
+              <LogOut size={14} />
+              Esci ({currentUser?.email?.split('@')[0]})
             </button>
           </div>
           {/* --- FINE NUOVO BLOCCO --- */}          
