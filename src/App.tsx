@@ -785,15 +785,6 @@ Photorealistic, 8k, highly detailed.`;
         return "Errore nella generazione.";
       }
     }        
-        console.warn('Nessuna immagine nella risposta:', falData);
-        addTranscript({ sender: 'model', type: 'text', text: `😅 Non sono riuscita a scattare la foto... riproviamo?`, isComplete: true });
-        return "Non sono riuscito a generare l'immagine.";
-      } catch (e: any) {
-        console.error('Errore fal.ai:', e.message || e);
-        addTranscript({ sender: 'model', type: 'text', text: `😅 C'è stato un problemino tecnico... riprova più tardi?`, isComplete: true });
-        return "Errore nella generazione.";
-      }
-    }
 
     // --- GENERAZIONE STANDARD CON IMAGEN (per contenuti normali) ---
     const imageGenerationPromise = aiRef.current.models.generateImages({
