@@ -855,7 +855,7 @@ Photorealistic, 8k, highly detailed.`;
     }
     
     const redirectUri = window.location.origin;
-    const scope = 'https://www.googleapis.com/auth/calendar.events';
+    const scope = 'https://www.googleapis.com/auth/calendar';
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
       `client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}` +
       `&redirect_uri=${encodeURIComponent(redirectUri)}` +
