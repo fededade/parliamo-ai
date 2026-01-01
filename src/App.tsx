@@ -655,10 +655,10 @@ const App: React.FC = () => {
         finalPrompt = `Cinematic photo, high quality. ${prompt}`;
     }
 
-    // --- GENERAZIONE CON FAL.AI (per contenuti uncensored) ---
+// --- GENERAZIONE CON FAL.AI (per contenuti uncensored) ---
     if (isUncensored) {
       try {
-        // Messaggio di attesa con comportamento "tentennante"
+        // Messaggio di attesa
         if (isSelfie) {
           addTranscript({ sender: 'model', type: 'text', text: `😳 *Arrossisce leggermente* Ehm... ok, dammi un momento...`, isComplete: true });
           await new Promise(resolve => setTimeout(resolve, 2000));
@@ -682,34 +682,27 @@ const App: React.FC = () => {
 
         if (!falKey) {
           console.warn('FAL_KEY non configurata');
-          addTranscript({ sender: 'model', type: 'text', text: `😅 Mi dispiace, non riesco a scattare questo tipo di foto al momento...`, isComplete: true });
           return "Servizio non disponibile al momento.";
         }
 
-        // Il prompt dall'AI contiene già la descrizione della scena richiesta
-        // Lo usiamo per modificare l'avatar mantenendo l'identità
-        const userRequestPrompt = prompt; // Es: "in lingerie on the bed", "naked in shower", etc.
+        const userRequestPrompt = prompt; 
         
         // Costruiamo il prompt per image-to-image
-        // Deve essere MOLTO diretto su cosa cambiare
         const i2iPrompt = `${userRequestPrompt}. 
-Same person, same face, same identity.
-CHANGE the outfit and pose completely as described.
-Photorealistic intimate photography, soft lighting.`;
-
-        console.log('=== FAL.AI IMAGE-TO-IMAGE REQUEST ===');
-        console.log('User request (from AI):', userRequestPrompt);
-        console.log('I2I prompt:', i2iPrompt);
-        console.log('Has avatar:', !!avatarUrl);
+Same person, same face.
+Photorealistic, 8k, highly detailed.`;
 
         let falData: any = null;
+        
+        // --- NUOVO MOTORE: bytedance/seedream/v4 ---
+        const FAL_MODEL_URL = 'https://fal.run/bytedance/seedream/v4';
 
-        // Usa image-to-image SOLO se abbiamo l'avatar
+        // TENTATIVO 1: Image-to-Image (Se abbiamo l'avatar)
         if (isSelfie && avatarUrl) {
           addTranscript({ sender: 'model', type: 'text', text: `✨ *Si prepara...*`, isComplete: true });
           
           try {
-            const i2iResponse = await fetch('https://fal.run/fal-ai/flux/dev/image-to-image', {
+            const i2iResponse = await fetch(FAL_MODEL_URL, {
               method: 'POST',
               headers: {
                 'Authorization': `Key ${falKey}`,
@@ -717,60 +710,50 @@ Photorealistic intimate photography, soft lighting.`;
               },
               body: JSON.stringify({
                 prompt: i2iPrompt,
-                image_url: avatarUrl, // Base64 data URI accettato direttamente
-                strength: 0.95, // MASSIMO: cambia quasi tutto ma mantiene struttura viso
-                num_inference_steps: 50,
-                guidance_scale: 8.0, // Più alto = segue meglio il prompt
+                image_url: avatarUrl, // Passiamo l'avatar
+                strength: 0.75,       // Modificato per Seedream (valori tipici 0.6-0.8 per i2i)
+                num_inference_steps: 30,
+                guidance_scale: 7.5,
                 enable_safety_checker: false,
                 output_format: 'jpeg'
               })
             });
 
-            console.log('I2I response status:', i2iResponse.status);
-            
             if (i2iResponse.ok) {
               falData = await i2iResponse.json();
-              console.log('I2I response data:', falData);
             } else {
-              const errorText = await i2iResponse.text();
-              console.error('I2I error:', errorText);
+              console.error('I2I error:', await i2iResponse.text());
             }
           } catch (i2iErr) {
             console.error('I2I fetch error:', i2iErr);
           }
         }
 
-        // Fallback a text-to-image se image-to-image fallisce
+        // TENTATIVO 2: Text-to-Image (Fallback o se non c'è avatar)
         if (!falData || !falData.images || falData.images.length === 0) {
-          console.log('Fallback to text-to-image...');
+          console.log('Eseguo Text-to-Image con Seedream...');
           
-          // Per text-to-image, usiamo il finalPrompt che include la descrizione fisica
-          const t2iResponse = await fetch('https://fal.run/fal-ai/flux/dev', {
+          const t2iResponse = await fetch(FAL_MODEL_URL, {
             method: 'POST',
             headers: {
               'Authorization': `Key ${falKey}`,
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              prompt: `${finalPrompt}. NSFW allowed. Intimate sensual photography style.`,
-              image_size: 'portrait_4_3',
-              num_inference_steps: 35,
-              guidance_scale: 4.5,
+              prompt: `${finalPrompt}. High quality, photorealistic.`,
+              image_size: 'portrait_4_3', // Formato ritratto
+              num_inference_steps: 30,
+              guidance_scale: 7.5,
               num_images: 1,
               enable_safety_checker: false
             })
           });
 
-          console.log('T2I response status:', t2iResponse.status);
-
           if (!t2iResponse.ok) {
-            const errorText = await t2iResponse.text();
-            console.error('T2I error:', errorText);
             throw new Error(`Fal.ai error: ${t2iResponse.status}`);
           }
 
           falData = await t2iResponse.json();
-          console.log('T2I response:', falData);
         }
         
         // Estrai URL immagine
@@ -782,7 +765,6 @@ Photorealistic intimate photography, soft lighting.`;
         }
         
         if (imageUrl) {
-          // Scarica l'immagine e convertila in base64
           const imageResponse = await fetch(imageUrl);
           const imageBlob = await imageResponse.blob();
           const reader = new FileReader();
@@ -793,13 +775,16 @@ Photorealistic intimate photography, soft lighting.`;
               addTranscript({ sender: 'model', type: 'image', image: base64Result, isComplete: true });
               resolve(isSelfie ? "Ecco... spero ti piaccia! 😊" : "Ecco l'immagine.");
             };
-            reader.onerror = () => {
-              resolve("Errore nel caricamento dell'immagine.");
-            };
             reader.readAsDataURL(imageBlob);
           });
         }
         
+        return "Non sono riuscito a generare l'immagine.";
+      } catch (e: any) {
+        console.error('Errore fal.ai:', e.message || e);
+        return "Errore nella generazione.";
+      }
+    }        
         console.warn('Nessuna immagine nella risposta:', falData);
         addTranscript({ sender: 'model', type: 'text', text: `😅 Non sono riuscita a scattare la foto... riproviamo?`, isComplete: true });
         return "Non sono riuscito a generare l'immagine.";
