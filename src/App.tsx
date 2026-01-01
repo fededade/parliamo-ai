@@ -2398,30 +2398,55 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
                   </button>
                 </div>
               ) : (
-                <button
-                  onClick={initGoogleCalendar}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    padding: '12px 14px',
-                    backgroundColor: '#f3e8ff', // Sfondo viola chiarissimo per risaltare
-                    color: '#7e22ce', // Testo viola scuro
-                    borderRadius: '12px',
-                    border: '1px solid #d8b4fe',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    transition: 'all 0.2s',
-                    boxShadow: '0 2px 5px rgba(147, 51, 234, 0.1)'
-                  }}
-                  title={!GOOGLE_CLIENT_ID ? "Configura VITE_GOOGLE_CLIENT_ID" : ""}
-                >
-                  <Calendar size={18} />
-                  {GOOGLE_CLIENT_ID ? "Connetti Google Calendar" : "Configura Calendar (ID Mancante)"}
-                </button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+    <button
+      onClick={initGoogleCalendar}
+      style={{
+        width: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '10px',
+        padding: '14px 20px',
+        backgroundColor: 'white',
+        color: '#16a34a',
+        borderRadius: '12px',
+        border: '1px solid #bbf7d0',
+        cursor: 'pointer',
+        fontSize: '14px',
+        fontWeight: 600,
+        transition: 'all 0.2s',
+        boxShadow: '0 2px 8px rgba(34, 197, 94, 0.1)'
+      }}
+    >
+      <Calendar size={18} />
+      {GOOGLE_CLIENT_ID ? "Connetti Google Calendar" : "Configura Calendar (ID Mancante)"}
+    </button>
+    
+    {/* AVVISO UTENTE */}
+    <div style={{ 
+      fontSize: '10px', 
+      color: '#64748b', 
+      backgroundColor: 'rgba(255,255,255,0.6)', 
+      padding: '8px', 
+      borderRadius: '8px',
+      border: '1px dashed #cbd5e1'
+    }}>
+      <strong>Nota Tecnica:</strong> Se ricevi un errore "Access Blocked" o "403", invia questa email all'amministratore:
+      <br/>
+      <code style={{ 
+        display: 'block', 
+        marginTop: '4px', 
+        backgroundColor: '#f1f5f9', 
+        padding: '4px', 
+        borderRadius: '4px', 
+        fontWeight: 'bold',
+        color: '#0f172a'
+      }}>
+        {currentUser?.email || "Email non rilevata"}
+      </code>
+    </div>
+  </div>
               )}
           </div>
           
