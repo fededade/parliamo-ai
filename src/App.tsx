@@ -405,6 +405,8 @@ const App: React.FC = () => {
   const currentInputTransRef = useRef('');
   const currentOutputTransRef = useRef('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const lastUserImageRef = useRef<string | null>(null); // Salva la foto caricata dall'utente
+  const lastUserImageAnalysisRef = useRef<string>("");  // Salva la descrizione della foto
   const wakeLockRef = useRef<any>(null); // Per mantenere lo schermo attivo
   const lastUploadedImageRef = useRef<string | null>(null); // Ultima immagine caricata dall'utente per editing
 
@@ -478,117 +480,57 @@ const App: React.FC = () => {
     setIsAnalyzingPhoto(true);
     
     try {
-      // Converti l'immagine in base64
       const reader = new FileReader();
-      
       reader.onload = async (e) => {
         const base64Data = e.target?.result as string;
         
-        // SALVA L'IMMAGINE PER EDITING SUCCESSIVO
-        lastUploadedImageRef.current = base64Data;
-        console.log('📸 Immagine salvata per editing successivo');
-        
-        // 1. Mostra SUBITO la foto dell'utente nella chat
+        // 1. SALVIAMO I DATI PER IL "CASO 1" (Modifica foto utente)
+        lastUserImageRef.current = base64Data; 
+
+        // Mostra immagine in chat
         const userImageId = Date.now().toString();
-        addTranscript({
-          id: userImageId,
-          sender: 'user',
-          type: 'image',
-          image: base64Data,
-          isComplete: true
-        });
+        addTranscript({ id: userImageId, sender: 'user', type: 'image', image: base64Data, isComplete: true });
 
         try {
-          // 2. Prima facciamo analizzare la foto al modello di testo (più preciso per i dettagli)
+          // Analisi per Imagen (necessaria per ricreare la foto con modifiche)
           const imageAnalysisPrompt = `
-          Analizza questa immagine inviata dall'utente ${config.userName}.
-          Descrivila brevemente.
-          SE l'utente ha chiesto una modifica (es. "cambia colore", "aggiungi barba"), descrivi ESATTAMENTE come dovrebbe apparire l'immagine modificata.
+          Analizza questa immagine in modo TECNICO per una rigenerazione AI (Image-to-Image).
+          Descrivi: soggetto principale, abbigliamento, colori esatti, sfondo, illuminazione, stile fotografico.
+          Sii dettagliatissimo.
           `;
 
           const response = await aiRef.current!.models.generateContent({
             model: TEXT_MODEL_NAME,
             contents: [
-              {
-                role: 'user',
-                parts: [
-                  { text: imageAnalysisPrompt },
-                  { 
-                    inlineData: {
-                      mimeType: file.type,
-                      data: base64Data.split(',')[1]
-                    }
-                  }
-                ]
-              }
+              { role: 'user', parts: [{ text: imageAnalysisPrompt }, { inlineData: { mimeType: file.type, data: base64Data.split(',')[1] } }] }
             ]
           });
 
-          const aiAnalysis = response.text || "Vedo l'immagine.";
+          const analysis = response.text || "Immagine utente";
+          lastUserImageAnalysisRef.current = analysis; // Salviamo l'analisi
           
-          // 3. INVIO ALLA SESSIONE LIVE (Se connesso)
+          // Istruzione all'IA per il comportamento
           if (isConnected && sessionPromiseRef.current) {
             const session = await sessionPromiseRef.current;
-            
-            // FIX DOPPIO MESSAGGIO:
-            // Non aggiungiamo manualmente addTranscript qui per il 'model'. 
-            // Inviamo l'istruzione al server. Quando il server risponderà (audio + testo),
-            // il gestore 'onmessage' aggiungerà il messaggio alla chat.
-            
             session.sendClientContent({ 
-              turns: [
-                { 
+              turns: [{ 
                   role: 'user', 
-                  parts: [{ text: `[ISTRUZIONE SISTEMA DIRETTA: L'utente ha appena caricato una foto.
-                  
-                  ANALISI DELL'IMMAGINE: "${aiAnalysis}"
-                  
-                  TUOI ORDINI:
-                  1. Se l'utente chiede una modifica alla foto (es. "aggiungi barba", "cambia colore capelli", "rendimi più giovane"), USA SUBITO lo strumento 'generate_image' con is_edit=TRUE. Il prompt deve descrivere la modifica richiesta.
-                  2. Se è solo una foto da vedere, commentala con la tua personalità.
-                  
-                  NON dire "sto analizzando" o "non posso modificare", fallo e basta usando is_edit=true.]` }] 
-                }
-              ] 
+                  parts: [{ text: `[SYSTEM: L'utente ha caricato una foto. Analisi salvata: "${analysis}". 
+                  SE chiede modifiche a QUESTA foto, usa 'generate_image' (is_selfie=false).
+                  SE chiede un selfie tuo, usa 'generate_image' (is_selfie=true).]` }] 
+                }] 
             });
-
           } else {
-            // FALLBACK (Se NON sei connesso in Live):
-            // Qui dobbiamo aggiungere il messaggio manualmente perché non c'è il server che ci risponde
-            addTranscript({
-              id: (Date.now() + 1).toString(),
-              sender: 'model',
-              type: 'text',
-              text: aiAnalysis, // O un messaggio generico
-              isComplete: true
-            });
+             // Fallback offline
+             addTranscript({ sender: 'model', type: 'text', text: "Ho visto la tua foto. Vuoi che la modifichi o ne vuoi una mia?", isComplete: true });
           }
 
-        } catch (err) {
-          console.error('Errore analisi foto:', err);
-          const fallbackText = "Ho ricevuto la foto, ma ho avuto un piccolo problema a vederla bene.";
-          addTranscript({
-            id: (Date.now() + 1).toString(),
-            sender: 'model',
-            type: 'text',
-            text: fallbackText,
-            isComplete: true
-          });
-        }
-        
+        } catch (err) { console.error('Errore analisi', err); }
         setIsAnalyzingPhoto(false);
       };
-      
       reader.readAsDataURL(file);
-    } catch (err) {
-      console.error('Errore upload foto:', err);
-      setIsAnalyzingPhoto(false);
-    }
-    
-    // Reset input per poter ricaricare lo stesso file
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    } catch (err) { console.error(err); setIsAnalyzingPhoto(false); }
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleConfigSubmit = async () => {
@@ -686,312 +628,104 @@ const App: React.FC = () => {
     }
   };
 
-  const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, isUncensored: boolean = false, isEdit: boolean = false): Promise<string | null> => {
+const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, isUncensored: boolean = false): Promise<string | null> => {
     if (!aiRef.current) return null;
-    
-    // Mappatura corporatura italiano -> inglese
-    const bodyTypeMap: {[key: string]: string} = {
-      'Minuta': 'petite',
-      'Normale': 'normal',
-      'Sportiva': 'athletic',
-      'Formoso/a': 'curvy',
-      'Taglia comoda': 'plus-size'
-    };
-    const bodyTypeEn = bodyTypeMap[config.bodyType] || 'normal';
-    
-    // Costruiamo la descrizione fisica FISSA dell'avatar
-    const avatarDescription = `a ${config.age} years old ${config.gender === 'Donna' ? 'woman' : config.gender === 'Uomo' ? 'man' : 'person'}, ${config.hairColor} hair, ${config.eyeColor} eyes, ${config.skinTone} skin, ${bodyTypeEn} build, ${config.physicalTraits || ''}`;
 
-    // --- 1. EDITING IMMAGINE UTENTE CON IMAGEN ---
-    if (isEdit && lastUploadedImageRef.current) {
-      console.log('🎨 Modalità EDIT: Imagen editing attivo');
-      
-      try {
-        addTranscript({ sender: 'model', type: 'text', text: `✨ Sto modificando la foto...`, isComplete: true });
+    // --- STRADA 3: AVATAR HOT / UNCENSORED (Fal.ai Seedream Edit) ---
+    if (isSelfie && isUncensored) {
+        if (!avatarUrl) return "Non ho ancora una mia foto base per fare modifiche hot. Chiedimi prima un selfie normale.";
         
-        // Per l'editing con Imagen, creiamo un prompt dettagliato che descrive l'immagine modificata
-        // basandoci sull'analisi dell'immagine originale
-        const editPrompt = `${prompt}. 
-Maintain the original composition, background, lighting and overall structure of the original photo.
-Make only the requested modifications while keeping everything else identical.
-Photorealistic, high quality, natural lighting, 8k.`;
-
-        const imageGenerationPromise = aiRef.current.models.generateImages({
-          model: IMAGE_MODEL_NAME,
-          prompt: editPrompt,
-          config: {
-            numberOfImages: 1,
-            outputMimeType: 'image/jpeg',
-            aspectRatio: '3:4'
-          }
-        });
-
-        const response = await imageGenerationPromise;
-
-        let imageUrl: string | null = null;
-        if (response.generatedImages && response.generatedImages.length > 0) {
-          const img = response.generatedImages[0];
-          if (img.image?.imageBytes) {
-            imageUrl = `data:image/jpeg;base64,${img.image.imageBytes}`;
-          }
-        }
-        
-        if (imageUrl) {
-          // Salva l'immagine modificata per ulteriori editing
-          lastUploadedImageRef.current = imageUrl;
-          addTranscript({ sender: 'model', type: 'image', image: imageUrl, isComplete: true });
-          return "Ecco la foto modificata! Se vuoi altre modifiche, dimmelo.";
-        }
-        return "Non sono riuscito a modificare l'immagine.";
-      } catch (e: any) {
-        console.error('Errore editing Imagen:', e.message || e);
-        return "Errore nella modifica dell'immagine.";
-      }
-    }
-    
-    // Se is_edit ma non c'è immagine caricata
-    if (isEdit && !lastUploadedImageRef.current) {
-      return "Non ho un'immagine da modificare. Carica prima una foto!";
-    }
-
-    // --- 2. CONTENUTI UNCENSORED CON SEEDREAM V4/EDIT ---
-    // Logica: Prima generiamo l'avatar con Imagen, poi lo passiamo a Seedream per le modifiche uncensored
-    if (isUncensored) {
-      try {
-        console.log("🚀 Avvio generazione Uncensored con Imagen + Seedream v4/edit...");
-        
-        // Messaggi di attesa differenziati
-        if (isSelfie) {
-          addTranscript({ sender: 'model', type: 'text', text: `😳 *Arrossisce* Ok, chiudo la porta a chiave... dammi un secondo.`, isComplete: true });
-        } else {
-          addTranscript({ sender: 'model', type: 'text', text: `🎨 Sto lavorando a questa immagine senza filtri...`, isComplete: true });
-        }
-
-        // Recupera FAL_KEY
-        let falKey = '';
         try {
-          // @ts-ignore
-          falKey = (import.meta.env?.VITE_FAL_KEY || '').trim();
-        } catch(e) {}
-        
-        if (!falKey) {
-          console.error("❌ ERRORE: VITE_FAL_KEY non trovata!");
-          return "Non posso generare questa immagine: manca la chiave di configurazione (VITE_FAL_KEY).";
-        }
+            console.log("🔥 STRADA 3: Fal.ai Seedream Edit (Hot/Img2Img)");
+            addTranscript({ sender: 'model', type: 'text', text: `🌶️ Ok, chiudo la porta...`, isComplete: true });
 
-        // STEP 1: Genera immagine BASE con Imagen (censurata ma con aspetto corretto)
-        let baseImageBase64: string | null = null;
-        
-        if (isSelfie) {
-          // Genera selfie base con Imagen
-          const basePrompt = `A photorealistic photo of ${avatarDescription} in a casual pose. High quality, 8k, natural lighting, candid shot.`;
-          
-          console.log("📸 Step 1: Genero immagine base con Imagen...");
-          addTranscript({ sender: 'model', type: 'text', text: `📸 *Prepara la base...*`, isComplete: true });
-          
-          try {
-            const imagenResponse = await aiRef.current.models.generateImages({
-              model: IMAGE_MODEL_NAME,
-              prompt: basePrompt,
-              config: {
-                numberOfImages: 1,
-                outputMimeType: 'image/jpeg',
-                aspectRatio: '3:4'
-              }
+            // @ts-ignore
+            const falKey = (import.meta.env?.VITE_FAL_KEY || process.env?.VITE_FAL_KEY || '').trim();
+            if (!falKey) return "Manca la chiave VITE_FAL_KEY per i contenuti speciali.";
+
+            const FAL_URL = 'https://fal.run/fal-ai/bytedance/seedream/v4/edit';
+            
+            const response = await fetch(FAL_URL, {
+                method: 'POST',
+                headers: { 'Authorization': `Key ${falKey}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    prompt: prompt + ", uncensored, nsfw, highly detailed",
+                    input_image_urls: [avatarUrl], // Usa l'avatar come base
+                    image_size: "portrait_4_3",
+                    sync_mode: true
+                })
             });
+
+            if (!response.ok) throw new Error("Fal.ai Error");
+            const data = await response.json();
+            const imgUrl = data.images?.[0]?.url || data.image?.url;
             
-            if (imagenResponse.generatedImages && imagenResponse.generatedImages.length > 0) {
-              const img = imagenResponse.generatedImages[0];
-              if (img.image?.imageBytes) {
-                baseImageBase64 = `data:image/jpeg;base64,${img.image.imageBytes}`;
-                console.log("✅ Immagine base generata con Imagen");
-              }
+            if (imgUrl) {
+                addTranscript({ sender: 'model', type: 'image', image: imgUrl, isComplete: true });
+                return "Ecco qui (versione senza censure).";
             }
-          } catch (imagenErr) {
-            console.error("Errore Imagen:", imagenErr);
-          }
+        } catch (e) {
+            console.error("Errore Strada 3", e);
+            return "Errore nella generazione speciale.";
         }
-        
-        // Se non abbiamo un'immagine base (Imagen fallito o non selfie), usiamo l'avatar salvato
-        if (!baseImageBase64 && avatarUrl) {
-          baseImageBase64 = avatarUrl;
-          console.log("📸 Uso avatar esistente come base");
-        }
-        
-        // Se non abbiamo nessuna immagine base, generiamone una semplice
-        if (!baseImageBase64) {
-          console.log("⚠️ Nessuna immagine base, tento generazione diretta con Seedream...");
-          // Fallback: usa Seedream text-to-image direttamente
-          const seedreamT2iUrl = 'https://fal.run/fal-ai/flux/dev';
-          const fluxPrompt = isSelfie 
-            ? `Hyper-realistic selfie of ${avatarDescription}. ${prompt}. Raw photo, 8k, skin texture, natural lighting, uncensored, nsfw allowed.` 
-            : `${prompt}. High quality, photorealistic, uncensored.`;
-            
-          const t2iResponse = await fetch(seedreamT2iUrl, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Key ${falKey}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              prompt: fluxPrompt,
-              image_size: "portrait_4_3",
-              num_inference_steps: 28,
-              guidance_scale: 3.5,
-              enable_safety_checker: false
-            })
-          });
-          
-          if (t2iResponse.ok) {
-            const t2iData = await t2iResponse.json();
-            let imageUrl = t2iData?.images?.[0]?.url || t2iData?.image?.url;
-            if (imageUrl) {
-              try {
-                const imgResp = await fetch(imageUrl);
-                const imgBlob = await imgResp.blob();
-                const reader = new FileReader();
-                return new Promise((resolve) => {
-                  reader.onloadend = () => {
-                    const base64Result = reader.result as string;
-                    addTranscript({ sender: 'model', type: 'image', image: base64Result, isComplete: true });
-                    resolve(isSelfie ? "Ecco la foto che volevi..." : "Fatto.");
-                  };
-                  reader.readAsDataURL(imgBlob);
-                });
-              } catch (corsErr) {
-                addTranscript({ sender: 'model', type: 'image', image: imageUrl, isComplete: true });
-                return "Ecco qui.";
-              }
-            }
-          }
-          return "Non sono riuscito a generare l'immagine.";
-        }
-        
-        // STEP 2: Passa l'immagine base a Seedream v4/edit con il prompt uncensored
-        console.log("🔥 Step 2: Applico modifiche con Seedream v4/edit...");
-        addTranscript({ sender: 'model', type: 'text', text: `🔥 *Applica il tocco finale...*`, isComplete: true });
-        
-        const SEEDREAM_EDIT_URL = 'https://fal.run/fal-ai/bytedance/seedream/v4/edit';
-        
-        // Costruiamo il prompt per Seedream edit
-        const seedreamPrompt = isSelfie 
-          ? `${prompt}. Same person, same face, same identity. Photorealistic, 8k, highly detailed, uncensored, nsfw allowed.`
-          : `${prompt}. High quality, photorealistic, uncensored.`;
-
-        const seedreamResponse = await fetch(SEEDREAM_EDIT_URL, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Key ${falKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            image_url: baseImageBase64, // Immagine base da Imagen
-            prompt: seedreamPrompt,
-            strength: 0.75, // Modifica moderata per mantenere identità
-            num_inference_steps: 30,
-            guidance_scale: 7.5,
-            enable_safety_checker: false,
-            output_format: 'jpeg'
-          })
-        });
-
-        if (!seedreamResponse.ok) {
-          const errText = await seedreamResponse.text();
-          console.error(`❌ Errore Seedream v4/edit: ${seedreamResponse.status}`, errText);
-          
-          // Fallback: prova con l'immagine base se disponibile
-          if (baseImageBase64) {
-            addTranscript({ sender: 'model', type: 'image', image: baseImageBase64, isComplete: true });
-            return "Ho avuto un problema con le modifiche avanzate, ma ecco l'immagine base.";
-          }
-          return `C'è stato un problema tecnico (Err: ${seedreamResponse.status}).`;
-        }
-
-        const seedreamData = await seedreamResponse.json();
-        console.log("✅ Risposta Seedream v4/edit ricevuta:", seedreamData);
-
-        // Estrai URL immagine
-        let finalImageUrl = '';
-        if (seedreamData?.images && seedreamData.images.length > 0) {
-          finalImageUrl = seedreamData.images[0].url || seedreamData.images[0];
-        } else if (seedreamData?.image?.url) {
-          finalImageUrl = seedreamData.image.url;
-        }
-
-        if (finalImageUrl) {
-          try {
-            const imageResponse = await fetch(finalImageUrl);
-            const imageBlob = await imageResponse.blob();
-            const reader = new FileReader();
-            
-            return new Promise((resolve) => {
-              reader.onloadend = () => {
-                const base64Result = reader.result as string;
-                addTranscript({ sender: 'model', type: 'image', image: base64Result, isComplete: true });
-                resolve(isSelfie ? "Ecco la foto che volevi... 😏" : "Fatto.");
-              };
-              reader.readAsDataURL(imageBlob);
-            });
-          } catch (corsError) {
-            console.warn("⚠️ Errore CORS, uso URL diretto:", corsError);
-            addTranscript({ sender: 'model', type: 'image', image: finalImageUrl, isComplete: true });
-            return "Ecco qui.";
-          }
-        }
-        
-        return "Il generatore non ha restituito l'immagine.";
-
-      } catch (e: any) {
-        console.error('💥 Eccezione generazione uncensored:', e);
-        return "Si è verificato un errore imprevisto durante la generazione.";
-      }
-    }        
-
-    // --- 3. GENERAZIONE STANDARD GOOGLE IMAGEN (Censored / Safe) ---
-    let googlePrompt = prompt;
-    if (isSelfie) {
-        googlePrompt = `A photorealistic photo of ${avatarDescription} who is ${prompt}. Ensure the character matches the physical description exactly. High quality, 8k, natural lighting, candid shot.`;
+        return "Errore sconosciuto Strada 3.";
     }
 
-    const imageGenerationPromise = aiRef.current.models.generateImages({
-        model: IMAGE_MODEL_NAME,
-        prompt: googlePrompt,
-        config: {
-            numberOfImages: 1,
-            outputMimeType: 'image/jpeg',
-            aspectRatio: '3:4'
+    // --- PREPARAZIONE PER STRADA 1 e 2 (Google Imagen) ---
+    // Poiché Imagen SDK Web è Text-to-Image, simuliamo l'Image-to-Image costruendo un prompt 
+    // che include la descrizione esatta dell'immagine di partenza + le modifiche.
+    
+    let basePrompt = "";
+    
+    if (isSelfie) {
+        // --- STRADA 2: AVATAR NORMALE (Imagen Img2Img simulato) ---
+        console.log("📸 STRADA 2: Avatar Normale su Imagen");
+        
+        // Mappatura corporatura
+        const bodyMap: any = { 'Minuta': 'petite', 'Normale': 'normal', 'Sportiva': 'athletic', 'Formoso/a': 'curvy' };
+        const bodyEn = bodyMap[config.bodyType] || 'normal';
+        
+        // Costruiamo il prompt usando i dati fissi dell'Avatar (Img2Img concettuale)
+        basePrompt = `Photorealistic portrait of a ${config.age} year old ${config.gender}, ${config.hairColor} hair, ${config.eyeColor} eyes, ${config.skinTone} skin, ${bodyEn} build. ${config.physicalTraits || ''}.`;
+        
+        addTranscript({ sender: 'model', type: 'text', text: `📸 Scatto la foto...`, isComplete: true });
+
+    } else {
+        // --- STRADA 1: FOTO UTENTE (Imagen Img2Img simulato) ---
+        console.log("🖼️ STRADA 1: Modifica Foto Utente su Imagen");
+        
+        if (!lastUserImageAnalysisRef.current) {
+            return "Non posso modificare la foto perché non l'ho analizzata o non ne hai caricata una di recente.";
         }
-    });
+        
+        // Qui usiamo l'analisi della foto caricata come "Base"
+        basePrompt = `Recreate this specific image: ${lastUserImageAnalysisRef.current}.`;
+        addTranscript({ sender: 'model', type: 'text', text: `🎨 Modifico la tua foto...`, isComplete: true });
+    }
+
+    // Costruzione Prompt Finale per Imagen
+    // "Base Image Description" + "User Requested Changes" + "Style Enforcers"
+    const finalImagenPrompt = `${basePrompt} MODIFICATIONS: ${prompt}. Style: 8k, photorealistic, raw photo, natural lighting.`;
 
     try {
-        if (isSelfie) {
-            addTranscript({ sender: 'model', type: 'text', text: `📸 *Prende il telefono e si mette in posa...*`, isComplete: true });
-            await new Promise(resolve => setTimeout(resolve, 3000)); // Pausa scenica
-        } else {
-            addTranscript({ sender: 'model', type: 'text', text: `🎨 Genero l'immagine...`, isComplete: true });
-        }
+        const response = await aiRef.current.models.generateImages({
+            model: IMAGE_MODEL_NAME,
+            prompt: finalImagenPrompt,
+            config: { numberOfImages: 1, outputMimeType: 'image/jpeg', aspectRatio: '3:4' }
+        });
 
-        const response = await imageGenerationPromise;
-
-        let imageUrl: string | null = null;
-        if (response.generatedImages && response.generatedImages.length > 0) {
-            const img = response.generatedImages[0];
-            if (img.image?.imageBytes) {
-                imageUrl = `data:image/jpeg;base64,${img.image.imageBytes}`;
-            }
+        const img = response.generatedImages?.[0];
+        if (img?.image?.imageBytes) {
+            const url = `data:image/jpeg;base64,${img.image.imageBytes}`;
+            addTranscript({ sender: 'model', type: 'image', image: url, isComplete: true });
+            return "Fatto.";
         }
-        
-        if (imageUrl) {
-            addTranscript({ sender: 'model', type: 'image', image: imageUrl, isComplete: true });
-            return isSelfie ? "Foto inviata!" : "Ecco l'immagine.";
-        }
-        return "Non sono riuscito a generare l'immagine con Google.";
-    } catch (e: any) {
-        console.error('Errore generazione immagine Google:', e.message || e);
-        return "Mi sa che la fotocamera non funziona bene oggi (Blocco Google).";
+        return "L'immagine è stata bloccata dai filtri di sicurezza.";
+    } catch (e) {
+        console.error("Errore Imagen", e);
+        return "Errore tecnico durante la generazione.";
     }
   };
-
   const handleSendEmail = (recipient: string, subject: string, body: string) => {
     addTranscript({ sender: 'model', type: 'action', text: `📧 Email pronta per: ${recipient}`, isComplete: true, actionUrl: `mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, actionLabel: 'Invia Email', actionIcon: 'mail' });
     return "SUCCESS";
