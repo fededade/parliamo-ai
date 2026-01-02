@@ -680,7 +680,7 @@ const App: React.FC = () => {
     }
   };
 
-  const const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, isUncensored: boolean = false): Promise<string | null> => {
+  const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, isUncensored: boolean = false): Promise<string | null> => {
     if (!aiRef.current) return null;
     
     // Mappatura corporatura italiano -> inglese
