@@ -231,7 +231,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                   outline: 'none',
                   backgroundColor: 'rgba(255,255,255,0.8)',
                   transition: 'border-color 0.2s, box-shadow 0.2s',
-                  boxSizing: 'border-box'
+                  boxSizing: 'border-box',
+                  color: '#1e293b'
                 }}
                 onFocus={(e) => {
                   e.target.style.borderColor = '#9333ea';
@@ -281,7 +282,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                     outline: 'none',
                     backgroundColor: 'rgba(255,255,255,0.8)',
                     transition: 'border-color 0.2s, box-shadow 0.2s',
-                    boxSizing: 'border-box'
+                    boxSizing: 'border-box',
+                    color: '#1e293b'
                   }}
                   onFocus={(e) => {
                     e.target.style.borderColor = '#9333ea';
@@ -352,7 +354,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                     outline: 'none',
                     backgroundColor: 'rgba(255,255,255,0.8)',
                     transition: 'border-color 0.2s, box-shadow 0.2s',
-                    boxSizing: 'border-box'
+                    boxSizing: 'border-box',
+                    color: '#1e293b'
                   }}
                   onFocus={(e) => {
                     e.target.style.borderColor = '#9333ea';

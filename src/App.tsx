@@ -478,10 +478,11 @@ const App: React.FC = () => {
     try {
       // Converti l'immagine in base64
       const reader = new FileReader();
+      
       reader.onload = async (e) => {
         const base64Data = e.target?.result as string;
         
-        // Aggiungi l'immagine dell'utente alla chat
+        // 1. Mostra SUBITO la foto dell'utente nella chat
         const userImageId = Date.now().toString();
         addTranscript({
           id: userImageId,
@@ -492,11 +493,12 @@ const App: React.FC = () => {
         });
 
         try {
-          // Chiedi all'IA di commentare l'immagine
-          const imageAnalysisPrompt = `Sei ${config.name}, un confidente empatico e curioso. L'utente ${config.userName} ti ha appena inviato una foto. 
-          Analizza l'immagine e rispondi in modo amichevole e caloroso. 
-          Fai commenti positivi su quello che vedi, mostra interesse genuino e fai 1-2 domande per stimolare la conversazione.
-          Sii naturale e colloquiale, come un vero confidente. Rispondi in italiano, max 2-3 frasi.`;
+          // 2. Prima facciamo analizzare la foto al modello di testo (più preciso per i dettagli)
+          const imageAnalysisPrompt = `
+          Analizza questa immagine inviata dall'utente ${config.userName}.
+          Descrivila brevemente.
+          SE l'utente ha chiesto una modifica (es. "cambia colore", "aggiungi barba"), descrivi ESATTAMENTE come dovrebbe apparire l'immagine modificata.
+          `;
 
           const response = await aiRef.current!.models.generateContent({
             model: TEXT_MODEL_NAME,
@@ -516,39 +518,49 @@ const App: React.FC = () => {
             ]
           });
 
-          const aiComment = response.text || "Che bella foto! Raccontami di più!";
+          const aiAnalysis = response.text || "Vedo l'immagine.";
           
-          // Aggiungi alla chat
-          addTranscript({
-            id: (Date.now() + 1).toString(),
-            sender: 'model',
-            type: 'text',
-            text: aiComment,
-            isComplete: true
-          });
-          
-          // Se la sessione live è attiva, invia il testo per farlo pronunciare dall'IA
-          // NOTA: Usiamo un messaggio che indica chiaramente di SOLO ripetere, senza aggiungere altro
+          // 3. INVIO ALLA SESSIONE LIVE (Se connesso)
           if (isConnected && sessionPromiseRef.current) {
-            try {
-              const session = await sessionPromiseRef.current;
-              // Inviamo come se fosse un messaggio dell'assistente da pronunciare, non una domanda dell'utente
-              session.sendClientContent({ 
-                turns: [
-                  { 
-                    role: 'user', 
-                    parts: [{ text: `[ISTRUZIONE SISTEMA: L'utente ha inviato una foto e tu hai già scritto questo commento nella chat. Ora devi SOLO pronunciare ad alta voce esattamente queste parole, senza aggiungere NULLA prima o dopo, senza dire che non hai ricevuto foto perché l'hai già commentata. Pronuncia SOLO questo testo:] "${aiComment}"` }] 
-                  }
-                ] 
-              });
-            } catch (e) {
-              console.log('Sessione non disponibile per TTS');
-            }
+            const session = await sessionPromiseRef.current;
+            
+            // FIX DOPPIO MESSAGGIO:
+            // Non aggiungiamo manualmente addTranscript qui per il 'model'. 
+            // Inviamo l'istruzione al server. Quando il server risponderà (audio + testo),
+            // il gestore 'onmessage' aggiungerà il messaggio alla chat.
+            
+            session.sendClientContent({ 
+              turns: [
+                { 
+                  role: 'user', 
+                  parts: [{ text: `[ISTRUZIONE SISTEMA DIRETTA: L'utente ha appena caricato una foto.
+                  
+                  ANALISI DELL'IMMAGINE: "${aiAnalysis}"
+                  
+                  TUOI ORDINI:
+                  1. Se l'utente chiede una modifica alla foto, USA SUBITO lo strumento 'generate_image' descrivendo la nuova immagine basandoti sull'analisi qui sopra + le modifiche richieste.
+                  2. Se è solo una foto da vedere, commentala con la tua personalità.
+                  
+                  NON dire "sto analizzando", fallo e basta.]` }] 
+                }
+              ] 
+            });
+
+          } else {
+            // FALLBACK (Se NON sei connesso in Live):
+            // Qui dobbiamo aggiungere il messaggio manualmente perché non c'è il server che ci risponde
+            addTranscript({
+              id: (Date.now() + 1).toString(),
+              sender: 'model',
+              type: 'text',
+              text: aiAnalysis, // O un messaggio generico
+              isComplete: true
+            });
           }
 
         } catch (err) {
           console.error('Errore analisi foto:', err);
-          const fallbackText = "Che bella foto! Mi piacerebbe saperne di più. Cosa stavi facendo in quel momento?";
+          const fallbackText = "Ho ricevuto la foto, ma ho avuto un piccolo problema a vederla bene.";
           addTranscript({
             id: (Date.now() + 1).toString(),
             sender: 'model',
@@ -567,7 +579,7 @@ const App: React.FC = () => {
       setIsAnalyzingPhoto(false);
     }
     
-    // Reset input
+    // Reset input per poter ricaricare lo stesso file
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -1270,6 +1282,15 @@ RICERCA ONLINE E INFO LOCALI:
   3. Dati specifici o verifiche (es. "prezzo attuale dell'oro", "meteo domani").
 - Quando fornisci risultati locali, cerca di dare nome dell'attività e indirizzo se disponibili.
 - Non dire "non posso navigare in internet", ORA PUOI farlo tramite questo strumento.
+
+GESTIONE E MODIFICA IMMAGINI CARICATE:
+1.  **Analisi:** Quando l'utente carica un'immagine, analizzala e commentala brevemente se pertinente al discorso.
+2.  **Richieste di Modifica:** Se l'utente carica una foto e chiede una modifica (es. "aggiungi la barba a questo selfie", "cambia il colore del divano in questa stanza", "fammi sembrare più anziano"):
+    * **NON** dire "non posso modificare le immagini esistenti".
+    * **INVECE, USA L'IMMAGINAZIONE:** Interpreta la richiesta come un comando per generare una NUOVA immagine basata su quella che vedi.
+    * **Azione:** Usa lo strumento `generateImage`.
+    * **Prompt:** Il prompt per lo strumento dovrà descrivere la scena originale che vedi nella foto caricata, AGGIUNGENDO i dettagli della modifica richiesta.
+    * *Esempio:* Se vedi un uomo senza barba e l'utente dice "metti la barba", usa `generateImage` con prompt: "A photorealistic portrait based on the uploaded image, showing the same man but now with a full, well-groomed beard."
 
 REGOLE FONDAMENTALI AGGIUNTIVE:
 - Sii naturale, non dire MAI di essere un'AI.
