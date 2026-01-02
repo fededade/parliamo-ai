@@ -244,8 +244,10 @@ const App: React.FC = () => {
         localStorage.removeItem('ti_ascolto_config');
         localStorage.removeItem('ti_ascolto_avatar');
         localStorage.removeItem('ti_ascolto_configured');
+        localStorage.removeItem('ti_ascolto_chat_history'); // Pulisce anche la cronologia
         setIsConfigured(false);
         setAvatarUrl(null);
+        setTranscripts([]); // Reset della chat
       } catch (error) {
         console.error('Logout error:', error);
       }
@@ -321,8 +323,10 @@ const App: React.FC = () => {
     localStorage.removeItem('ti_ascolto_config');
     localStorage.removeItem('ti_ascolto_avatar');
     localStorage.removeItem('ti_ascolto_configured');
+    localStorage.removeItem('ti_ascolto_chat_history'); // Pulisce anche la cronologia
     setIsConfigured(false);
     setAvatarUrl(null);
+    setTranscripts([]); // Reset della chat
     disconnect();
   };
   
@@ -352,6 +356,30 @@ const App: React.FC = () => {
   const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true); // Inizia visibile su mobile
   const [googleCalendarToken, setGoogleCalendarToken] = useState<string | null>(null); // Token per Google Calendar
+
+  // --- MEMORIA: Carica la storia all'avvio ---
+  useEffect(() => {
+    const savedHistory = localStorage.getItem('ti_ascolto_chat_history');
+    if (savedHistory) {
+      try {
+        const parsed = JSON.parse(savedHistory);
+        // Opzionale: puliamo eventuali immagini vecchie per non appesantire
+        setTranscripts(parsed);
+        console.log('📜 Cronologia chat caricata da localStorage');
+      } catch (e) {
+        console.error("Errore caricamento memoria:", e);
+      }
+    }
+  }, []);
+
+  // --- MEMORIA: Salva la storia ogni volta che cambia ---
+  useEffect(() => {
+    // Salviamo solo gli ultimi 50 messaggi per non riempire la memoria del browser
+    if (transcripts.length > 0) {
+      const historyToSave = transcripts.slice(-50); 
+      localStorage.setItem('ti_ascolto_chat_history', JSON.stringify(historyToSave));
+    }
+  }, [transcripts]);
 
   // Refs
   const inputAudioContextRef = useRef<AudioContext | null>(null);
@@ -1193,6 +1221,20 @@ Photorealistic, 8k, highly detailed.`;
       
       console.log(`🎭 Personalità selezionata: ${rawSociality} (temp: ${personalityProfile.temp})`);
 
+      // 1. Prepara il contesto della memoria (ultimi 15 scambi testuali)
+      const memoryContext = transcripts
+        .filter(t => t.type === 'text') // Prendiamo solo il testo
+        .slice(-15) // Ultimi 15 messaggi
+        .map(t => `${t.sender === 'user' ? (config.userName || 'Utente') : config.name}: ${t.text}`)
+        .join('\n');
+      const memoryInstruction = memoryContext 
+        ? `\n\n=== MEMORIA CONVERSAZIONE RECENTE ===\nEcco cosa vi siete detti poco fa. Usalo per mantenere il filo del discorso:\n${memoryContext}\n=====================================\n` 
+        : "";
+      
+      if (memoryContext) {
+        console.log('📜 Memoria caricata con', transcripts.filter(t => t.type === 'text').slice(-15).length, 'messaggi');
+      }
+
       const configLive = {
         model: LIVE_MODEL_NAME,
         generationConfig: {
@@ -1205,7 +1247,7 @@ Photorealistic, 8k, highly detailed.`;
 --- MODULO PERSONALITÀ ATTIVO: ${rawSociality.toUpperCase()} ---
 ${personalityProfile.prompt}
 -----------------------------------------------------------
-
+${memoryInstruction}
 Sei ${config.name}, confidente di ${config.userName}. 
 Oltre al modulo personalità qui sopra, ecco la tua BIO: ${config.biography}.
 
