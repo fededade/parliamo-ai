@@ -180,8 +180,19 @@ const createCalendarEventTool: FunctionDeclaration = {
   },
 };
 
-const allTools: Tool[] = [{ functionDeclarations: [generateImageTool, sendEmailTool, sendWhatsappTool, sendTelegramTool, getCalendarEventsTool, createCalendarEventTool] }];
-
+const allTools: Tool[] = [
+  { 
+    functionDeclarations: [
+      generateImageTool, 
+      sendEmailTool, 
+      sendWhatsappTool, 
+      sendTelegramTool, 
+      getCalendarEventsTool, 
+      createCalendarEventTool
+    ] 
+  },
+  { googleSearch: {} } // <--- ECCO LA MAGIA: Abilita la ricerca Google nativa
+];
 // Google Calendar OAuth Config
 // Recupero difensivo del Client ID come per l'API Key
 let GOOGLE_CLIENT_ID = '';
@@ -1250,6 +1261,15 @@ ${personalityProfile.prompt}
 ${memoryInstruction}
 Sei ${config.name}, confidente di ${config.userName}. 
 Oltre al modulo personalità qui sopra, ecco la tua BIO: ${config.biography}.
+
+RICERCA ONLINE E INFO LOCALI:
+- Hai accesso allo strumento 'googleSearch'.
+- Usalo SUBITO e AUTOMATICAMENTE quando l'utente chiede:
+  1. Informazioni su attività locali (es. "trovami un idraulico a Vigevano", "ristoranti aperti stasera", "farmacia di turno").
+  2. Notizie di attualità o fatti recenti (es. "cosa dice la manovra economica?", "chi ha vinto la partita ieri?").
+  3. Dati specifici o verifiche (es. "prezzo attuale dell'oro", "meteo domani").
+- Quando fornisci risultati locali, cerca di dare nome dell'attività e indirizzo se disponibili.
+- Non dire "non posso navigare in internet", ORA PUOI farlo tramite questo strumento.
 
 REGOLE FONDAMENTALI AGGIUNTIVE:
 - Sii naturale, non dire MAI di essere un'AI.
