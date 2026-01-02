@@ -680,7 +680,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, isUncensored: boolean = false): Promise<string | null> => {
+  const const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, isUncensored: boolean = false): Promise<string | null> => {
     if (!aiRef.current) return null;
     
     // Mappatura corporatura italiano -> inglese
@@ -698,149 +698,113 @@ const App: React.FC = () => {
 
     let finalPrompt = prompt;
 
-    if (isSelfie) {
-        finalPrompt = `A photorealistic photo of ${avatarDescription} who is ${prompt}. 
-        Ensure the character matches the physical description exactly. 
-        High quality, 8k, natural lighting, candid shot.`;
-    } else {
-        finalPrompt = `Cinematic photo, high quality. ${prompt}`;
-    }
-
-// --- GENERAZIONE CON FAL.AI (per contenuti uncensored) ---
+    // --- LOGICA FAL.AI (FLUX) PER CONTENUTI UNCENSORED ---
     if (isUncensored) {
       try {
-        // Messaggio di attesa
+        console.log("🚀 Avvio generazione Fal.ai (Flux)...");
+        
+        // Messaggi di attesa differenziati
         if (isSelfie) {
-          addTranscript({ sender: 'model', type: 'text', text: `😳 *Arrossisce leggermente* Ehm... ok, dammi un momento...`, isComplete: true });
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          addTranscript({ sender: 'model', type: 'text', text: `📱 *Cerca l'angolazione giusta...*`, isComplete: true });
+          addTranscript({ sender: 'model', type: 'text', text: `😳 *Arrossisce* Ok, chiudo la porta a chiave... dammi un secondo.`, isComplete: true });
         } else {
-          addTranscript({ sender: 'model', type: 'text', text: `🎨 Sto preparando qualcosa di speciale...`, isComplete: true });
+          addTranscript({ sender: 'model', type: 'text', text: `🎨 Sto lavorando a questa immagine senza filtri...`, isComplete: true });
         }
 
-        // Recupera FAL_KEY
+        // Recupera FAL_KEY in modo sicuro
         let falKey = '';
         try {
           // @ts-ignore
           falKey = (import.meta.env?.VITE_FAL_KEY || '').trim();
         } catch(e) {}
+        
         if (!falKey) {
-          try {
-            // @ts-ignore
-            falKey = (process.env?.VITE_FAL_KEY || '').trim();
-          } catch(e) {}
+           console.error("❌ ERRORE: VITE_FAL_KEY non trovata!");
+           return "Non posso generare questa immagine: manca la chiave di configurazione (VITE_FAL_KEY).";
         }
 
-        if (!falKey) {
-          console.warn('FAL_KEY non configurata');
-          return "Servizio non disponibile al momento.";
+        // Costruzione Prompt per Flux
+        const fluxPrompt = isSelfie 
+          ? `Hyper-realistic selfie of ${avatarDescription}. ${prompt}. Raw photo, 8k, skin texture, natural lighting, uncensored, nsfw allowed.` 
+          : `${prompt}. High quality, photorealistic, uncensored.`;
+
+        // URL del modello FLUX (Molto più stabile e di qualità)
+        const FAL_MODEL_URL = 'https://fal.run/fal-ai/flux/dev';
+
+        const response = await fetch(FAL_MODEL_URL, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Key ${falKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            prompt: fluxPrompt,
+            image_size: "portrait_4_3",
+            num_inference_steps: 28, // Flux lavora bene con meno passi
+            guidance_scale: 3.5,     // Flux vuole guidance più bassa (3.5 non 7.5)
+            enable_safety_checker: false // Disabilita checker base
+          })
+        });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          console.error(`❌ Errore Fal.ai API: ${response.status}`, errText);
+          return `C'è stato un problema tecnico con il generatore esterno (Err: ${response.status}).`;
         }
 
-        const userRequestPrompt = prompt; 
-        
-        // Costruiamo il prompt per image-to-image
-        const i2iPrompt = `${userRequestPrompt}. 
-Same person, same face.
-Photorealistic, 8k, highly detailed.`;
+        const falData = await response.json();
+        console.log("✅ Risposta Fal.ai ricevuta:", falData);
 
-        let falData: any = null;
-        
-        // --- NUOVO MOTORE: bytedance/seedream/v4 ---
-        const FAL_MODEL_URL = 'https://fal.run/bytedance/seedream/v4';
-
-        // TENTATIVO 1: Image-to-Image (Se abbiamo l'avatar)
-        if (isSelfie && avatarUrl) {
-          addTranscript({ sender: 'model', type: 'text', text: `✨ *Si prepara...*`, isComplete: true });
-          
-          try {
-            const i2iResponse = await fetch(FAL_MODEL_URL, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Key ${falKey}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                prompt: i2iPrompt,
-                image_url: avatarUrl, // Passiamo l'avatar
-                strength: 0.75,       // Modificato per Seedream (valori tipici 0.6-0.8 per i2i)
-                num_inference_steps: 30,
-                guidance_scale: 7.5,
-                enable_safety_checker: false,
-                output_format: 'jpeg'
-              })
-            });
-
-            if (i2iResponse.ok) {
-              falData = await i2iResponse.json();
-            } else {
-              console.error('I2I error:', await i2iResponse.text());
-            }
-          } catch (i2iErr) {
-            console.error('I2I fetch error:', i2iErr);
-          }
-        }
-
-        // TENTATIVO 2: Text-to-Image (Fallback o se non c'è avatar)
-        if (!falData || !falData.images || falData.images.length === 0) {
-          console.log('Eseguo Text-to-Image con Seedream...');
-          
-          const t2iResponse = await fetch(FAL_MODEL_URL, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Key ${falKey}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              prompt: `${finalPrompt}. High quality, photorealistic.`,
-              image_size: 'portrait_4_3', // Formato ritratto
-              num_inference_steps: 30,
-              guidance_scale: 7.5,
-              num_images: 1,
-              enable_safety_checker: false
-            })
-          });
-
-          if (!t2iResponse.ok) {
-            throw new Error(`Fal.ai error: ${t2iResponse.status}`);
-          }
-
-          falData = await t2iResponse.json();
-        }
-        
         // Estrai URL immagine
         let imageUrl = '';
         if (falData?.images && falData.images.length > 0) {
-          imageUrl = falData.images[0].url || falData.images[0];
+          imageUrl = falData.images[0].url;
         } else if (falData?.image?.url) {
           imageUrl = falData.image.url;
         }
-        
+
         if (imageUrl) {
-          const imageResponse = await fetch(imageUrl);
-          const imageBlob = await imageResponse.blob();
-          const reader = new FileReader();
-          
-          return new Promise((resolve) => {
-            reader.onloadend = () => {
-              const base64Result = reader.result as string;
-              addTranscript({ sender: 'model', type: 'image', image: base64Result, isComplete: true });
-              resolve(isSelfie ? "Ecco... spero ti piaccia! 😊" : "Ecco l'immagine.");
-            };
-            reader.readAsDataURL(imageBlob);
-          });
+          // TENTATIVO DI PROXY: Invece di fetchare il blob (che dà CORS error), passiamo l'URL direttamente
+          // Se l'app supporta URL remoti, questo è meglio. 
+          // Se serve per forza base64, riproviamo con fetch con catch.
+          try {
+              const imageResponse = await fetch(imageUrl);
+              const imageBlob = await imageResponse.blob();
+              const reader = new FileReader();
+              
+              return new Promise((resolve) => {
+                reader.onloadend = () => {
+                  const base64Result = reader.result as string;
+                  addTranscript({ sender: 'model', type: 'image', image: base64Result, isComplete: true });
+                  resolve(isSelfie ? "Ecco la foto che volevi..." : "Fatto.");
+                };
+                reader.readAsDataURL(imageBlob);
+              });
+          } catch (corsError) {
+              // Se il fetch fallisce per CORS, mostriamo l'immagine come link/azione o proviamo a passarla raw
+              console.warn("⚠️ Errore CORS scaricando l'immagine, uso URL diretto:", corsError);
+              addTranscript({ sender: 'model', type: 'image', image: imageUrl, isComplete: true });
+              return "Ecco qui.";
+          }
         }
         
-        return "Non sono riuscito a generare l'immagine.";
+        return "Il generatore non ha restituito l'immagine.";
+
       } catch (e: any) {
-        console.error('Errore fal.ai:', e.message || e);
-        return "Errore nella generazione.";
+        console.error('💥 Eccezione Fal.ai:', e);
+        return "Si è verificato un errore imprevisto durante la generazione.";
       }
     }        
 
-    // --- GENERAZIONE STANDARD CON IMAGEN (per contenuti normali) ---
+    // --- GENERAZIONE STANDARD GOOGLE IMAGEN (Censored / Safe) ---
+    // Logica esistente per Imagen...
+    let googlePrompt = finalPrompt;
+    if (isSelfie) {
+        googlePrompt = `A photorealistic photo of ${avatarDescription} who is ${prompt}. Ensure the character matches the physical description exactly. High quality, 8k, natural lighting, candid shot.`;
+    }
+
     const imageGenerationPromise = aiRef.current.models.generateImages({
         model: IMAGE_MODEL_NAME,
-        prompt: finalPrompt,
+        prompt: googlePrompt,
         config: {
             numberOfImages: 1,
             outputMimeType: 'image/jpeg',
@@ -851,9 +815,9 @@ Photorealistic, 8k, highly detailed.`;
     try {
         if (isSelfie) {
             addTranscript({ sender: 'model', type: 'text', text: `📸 *Prende il telefono e si mette in posa...*`, isComplete: true });
-            await new Promise(resolve => setTimeout(resolve, 4000));
+            await new Promise(resolve => setTimeout(resolve, 3000)); // Pausa scenica
         } else {
-            addTranscript({ sender: 'model', type: 'text', text: `🎨 Genero l'immagine: "${prompt}"`, isComplete: true });
+            addTranscript({ sender: 'model', type: 'text', text: `🎨 Genero l'immagine...`, isComplete: true });
         }
 
         const response = await imageGenerationPromise;
@@ -870,10 +834,10 @@ Photorealistic, 8k, highly detailed.`;
             addTranscript({ sender: 'model', type: 'image', image: imageUrl, isComplete: true });
             return isSelfie ? "Foto inviata!" : "Ecco l'immagine.";
         }
-        return "Errore nella generazione.";
+        return "Non sono riuscito a generare l'immagine con Google.";
     } catch (e: any) {
-        console.error('Errore generazione immagine:', e.message || e);
-        return "Mi sa che la fotocamera non funziona bene oggi...";
+        console.error('Errore generazione immagine Google:', e.message || e);
+        return "Mi sa che la fotocamera non funziona bene oggi (Blocco Google).";
     }
   };
 
