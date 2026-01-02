@@ -100,13 +100,14 @@ const PERSONALITY_PROMPTS: Record<string, { prompt: string; temp: number }> = {
 // --- TOOLS DEFINITION ---
 const generateImageTool: FunctionDeclaration = {
   name: 'generate_image',
-  description: 'Genera un\'immagine. Usalo quando l\'utente chiede di vedere qualcosa o chiede una TUA foto. Se l\'utente chiede esplicitamente una foto "senza censure", "hot", "sexy", "intima", "osé", "nuda" o simili, imposta is_uncensored a TRUE.',
+  description: 'Genera un\'immagine. Usalo quando l\'utente chiede di vedere qualcosa, chiede una TUA foto, o chiede di MODIFICARE una foto che ha appena caricato. Se l\'utente chiede esplicitamente una foto "senza censure", "hot", "sexy", "intima", "osé", "nuda" o simili, imposta is_uncensored a TRUE. Se l\'utente ha caricato una foto e chiede di modificarla (aggiungere barba, cambiare colore, ecc.), imposta is_edit a TRUE.',
   parameters: {
     type: Type.OBJECT,
     properties: {
-      prompt: { type: Type.STRING, description: 'La descrizione del contesto o della scena.' },
-      is_selfie: { type: Type.BOOLEAN, description: 'TRUE se è una foto dell\'assistente, FALSE se oggetto generico.' },
-      is_uncensored: { type: Type.BOOLEAN, description: 'TRUE se l\'utente chiede esplicitamente contenuti senza censure/hot/sexy/intimi. FALSE per contenuti normali.' }
+      prompt: { type: Type.STRING, description: 'La descrizione del contesto o della scena. Per modifiche, descrivi come deve apparire l\'immagine finale.' },
+      is_selfie: { type: Type.BOOLEAN, description: 'TRUE se è una foto dell\'assistente, FALSE se oggetto generico o modifica di foto utente.' },
+      is_uncensored: { type: Type.BOOLEAN, description: 'TRUE se l\'utente chiede esplicitamente contenuti senza censure/hot/sexy/intimi. FALSE per contenuti normali.' },
+      is_edit: { type: Type.BOOLEAN, description: 'TRUE se l\'utente vuole MODIFICARE una foto che ha appena caricato (es. "aggiungi barba", "cambia colore capelli", "rendimi più giovane"). FALSE per generazioni da zero.' }
     },
     required: ['prompt'],
   },
@@ -405,6 +406,7 @@ const App: React.FC = () => {
   const currentOutputTransRef = useRef('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const wakeLockRef = useRef<any>(null); // Per mantenere lo schermo attivo
+  const lastUploadedImageRef = useRef<string | null>(null); // Ultima immagine caricata dall'utente per editing
 
   useEffect(() => {
     // VERCEL FIX: Defensive API Key retrieval
@@ -482,6 +484,10 @@ const App: React.FC = () => {
       reader.onload = async (e) => {
         const base64Data = e.target?.result as string;
         
+        // SALVA L'IMMAGINE PER EDITING SUCCESSIVO
+        lastUploadedImageRef.current = base64Data;
+        console.log('📸 Immagine salvata per editing successivo');
+        
         // 1. Mostra SUBITO la foto dell'utente nella chat
         const userImageId = Date.now().toString();
         addTranscript({
@@ -538,10 +544,10 @@ const App: React.FC = () => {
                   ANALISI DELL'IMMAGINE: "${aiAnalysis}"
                   
                   TUOI ORDINI:
-                  1. Se l'utente chiede una modifica alla foto, USA SUBITO lo strumento 'generate_image' descrivendo la nuova immagine basandoti sull'analisi qui sopra + le modifiche richieste.
+                  1. Se l'utente chiede una modifica alla foto (es. "aggiungi barba", "cambia colore capelli", "rendimi più giovane"), USA SUBITO lo strumento 'generate_image' con is_edit=TRUE. Il prompt deve descrivere la modifica richiesta.
                   2. Se è solo una foto da vedere, commentala con la tua personalità.
                   
-                  NON dire "sto analizzando", fallo e basta.]` }] 
+                  NON dire "sto analizzando" o "non posso modificare", fallo e basta usando is_edit=true.]` }] 
                 }
               ] 
             });
@@ -680,7 +686,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, isUncensored: boolean = false): Promise<string | null> => {
+  const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, isUncensored: boolean = false, isEdit: boolean = false): Promise<string | null> => {
     if (!aiRef.current) return null;
     
     // Mappatura corporatura italiano -> inglese
@@ -696,12 +702,63 @@ const App: React.FC = () => {
     // Costruiamo la descrizione fisica FISSA dell'avatar
     const avatarDescription = `a ${config.age} years old ${config.gender === 'Donna' ? 'woman' : config.gender === 'Uomo' ? 'man' : 'person'}, ${config.hairColor} hair, ${config.eyeColor} eyes, ${config.skinTone} skin, ${bodyTypeEn} build, ${config.physicalTraits || ''}`;
 
-    let finalPrompt = prompt;
+    // --- 1. EDITING IMMAGINE UTENTE CON IMAGEN ---
+    if (isEdit && lastUploadedImageRef.current) {
+      console.log('🎨 Modalità EDIT: Imagen editing attivo');
+      
+      try {
+        addTranscript({ sender: 'model', type: 'text', text: `✨ Sto modificando la foto...`, isComplete: true });
+        
+        // Per l'editing con Imagen, creiamo un prompt dettagliato che descrive l'immagine modificata
+        // basandoci sull'analisi dell'immagine originale
+        const editPrompt = `${prompt}. 
+Maintain the original composition, background, lighting and overall structure of the original photo.
+Make only the requested modifications while keeping everything else identical.
+Photorealistic, high quality, natural lighting, 8k.`;
 
-    // --- LOGICA FAL.AI (FLUX) PER CONTENUTI UNCENSORED ---
+        const imageGenerationPromise = aiRef.current.models.generateImages({
+          model: IMAGE_MODEL_NAME,
+          prompt: editPrompt,
+          config: {
+            numberOfImages: 1,
+            outputMimeType: 'image/jpeg',
+            aspectRatio: '3:4'
+          }
+        });
+
+        const response = await imageGenerationPromise;
+
+        let imageUrl: string | null = null;
+        if (response.generatedImages && response.generatedImages.length > 0) {
+          const img = response.generatedImages[0];
+          if (img.image?.imageBytes) {
+            imageUrl = `data:image/jpeg;base64,${img.image.imageBytes}`;
+          }
+        }
+        
+        if (imageUrl) {
+          // Salva l'immagine modificata per ulteriori editing
+          lastUploadedImageRef.current = imageUrl;
+          addTranscript({ sender: 'model', type: 'image', image: imageUrl, isComplete: true });
+          return "Ecco la foto modificata! Se vuoi altre modifiche, dimmelo.";
+        }
+        return "Non sono riuscito a modificare l'immagine.";
+      } catch (e: any) {
+        console.error('Errore editing Imagen:', e.message || e);
+        return "Errore nella modifica dell'immagine.";
+      }
+    }
+    
+    // Se is_edit ma non c'è immagine caricata
+    if (isEdit && !lastUploadedImageRef.current) {
+      return "Non ho un'immagine da modificare. Carica prima una foto!";
+    }
+
+    // --- 2. CONTENUTI UNCENSORED CON SEEDREAM V4/EDIT ---
+    // Logica: Prima generiamo l'avatar con Imagen, poi lo passiamo a Seedream per le modifiche uncensored
     if (isUncensored) {
       try {
-        console.log("🚀 Avvio generazione Fal.ai (Flux)...");
+        console.log("🚀 Avvio generazione Uncensored con Imagen + Seedream v4/edit...");
         
         // Messaggi di attesa differenziati
         if (isSelfie) {
@@ -710,7 +767,7 @@ const App: React.FC = () => {
           addTranscript({ sender: 'model', type: 'text', text: `🎨 Sto lavorando a questa immagine senza filtri...`, isComplete: true });
         }
 
-        // Recupera FAL_KEY in modo sicuro
+        // Recupera FAL_KEY
         let falKey = '';
         try {
           // @ts-ignore
@@ -718,86 +775,180 @@ const App: React.FC = () => {
         } catch(e) {}
         
         if (!falKey) {
-           console.error("❌ ERRORE: VITE_FAL_KEY non trovata!");
-           return "Non posso generare questa immagine: manca la chiave di configurazione (VITE_FAL_KEY).";
+          console.error("❌ ERRORE: VITE_FAL_KEY non trovata!");
+          return "Non posso generare questa immagine: manca la chiave di configurazione (VITE_FAL_KEY).";
         }
 
-        // Costruzione Prompt per Flux
-        const fluxPrompt = isSelfie 
-          ? `Hyper-realistic selfie of ${avatarDescription}. ${prompt}. Raw photo, 8k, skin texture, natural lighting, uncensored, nsfw allowed.` 
+        // STEP 1: Genera immagine BASE con Imagen (censurata ma con aspetto corretto)
+        let baseImageBase64: string | null = null;
+        
+        if (isSelfie) {
+          // Genera selfie base con Imagen
+          const basePrompt = `A photorealistic photo of ${avatarDescription} in a casual pose. High quality, 8k, natural lighting, candid shot.`;
+          
+          console.log("📸 Step 1: Genero immagine base con Imagen...");
+          addTranscript({ sender: 'model', type: 'text', text: `📸 *Prepara la base...*`, isComplete: true });
+          
+          try {
+            const imagenResponse = await aiRef.current.models.generateImages({
+              model: IMAGE_MODEL_NAME,
+              prompt: basePrompt,
+              config: {
+                numberOfImages: 1,
+                outputMimeType: 'image/jpeg',
+                aspectRatio: '3:4'
+              }
+            });
+            
+            if (imagenResponse.generatedImages && imagenResponse.generatedImages.length > 0) {
+              const img = imagenResponse.generatedImages[0];
+              if (img.image?.imageBytes) {
+                baseImageBase64 = `data:image/jpeg;base64,${img.image.imageBytes}`;
+                console.log("✅ Immagine base generata con Imagen");
+              }
+            }
+          } catch (imagenErr) {
+            console.error("Errore Imagen:", imagenErr);
+          }
+        }
+        
+        // Se non abbiamo un'immagine base (Imagen fallito o non selfie), usiamo l'avatar salvato
+        if (!baseImageBase64 && avatarUrl) {
+          baseImageBase64 = avatarUrl;
+          console.log("📸 Uso avatar esistente come base");
+        }
+        
+        // Se non abbiamo nessuna immagine base, generiamone una semplice
+        if (!baseImageBase64) {
+          console.log("⚠️ Nessuna immagine base, tento generazione diretta con Seedream...");
+          // Fallback: usa Seedream text-to-image direttamente
+          const seedreamT2iUrl = 'https://fal.run/fal-ai/flux/dev';
+          const fluxPrompt = isSelfie 
+            ? `Hyper-realistic selfie of ${avatarDescription}. ${prompt}. Raw photo, 8k, skin texture, natural lighting, uncensored, nsfw allowed.` 
+            : `${prompt}. High quality, photorealistic, uncensored.`;
+            
+          const t2iResponse = await fetch(seedreamT2iUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Key ${falKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              prompt: fluxPrompt,
+              image_size: "portrait_4_3",
+              num_inference_steps: 28,
+              guidance_scale: 3.5,
+              enable_safety_checker: false
+            })
+          });
+          
+          if (t2iResponse.ok) {
+            const t2iData = await t2iResponse.json();
+            let imageUrl = t2iData?.images?.[0]?.url || t2iData?.image?.url;
+            if (imageUrl) {
+              try {
+                const imgResp = await fetch(imageUrl);
+                const imgBlob = await imgResp.blob();
+                const reader = new FileReader();
+                return new Promise((resolve) => {
+                  reader.onloadend = () => {
+                    const base64Result = reader.result as string;
+                    addTranscript({ sender: 'model', type: 'image', image: base64Result, isComplete: true });
+                    resolve(isSelfie ? "Ecco la foto che volevi..." : "Fatto.");
+                  };
+                  reader.readAsDataURL(imgBlob);
+                });
+              } catch (corsErr) {
+                addTranscript({ sender: 'model', type: 'image', image: imageUrl, isComplete: true });
+                return "Ecco qui.";
+              }
+            }
+          }
+          return "Non sono riuscito a generare l'immagine.";
+        }
+        
+        // STEP 2: Passa l'immagine base a Seedream v4/edit con il prompt uncensored
+        console.log("🔥 Step 2: Applico modifiche con Seedream v4/edit...");
+        addTranscript({ sender: 'model', type: 'text', text: `🔥 *Applica il tocco finale...*`, isComplete: true });
+        
+        const SEEDREAM_EDIT_URL = 'https://fal.run/fal-ai/bytedance/seedream/v4/edit';
+        
+        // Costruiamo il prompt per Seedream edit
+        const seedreamPrompt = isSelfie 
+          ? `${prompt}. Same person, same face, same identity. Photorealistic, 8k, highly detailed, uncensored, nsfw allowed.`
           : `${prompt}. High quality, photorealistic, uncensored.`;
 
-        // URL del modello FLUX (Molto più stabile e di qualità)
-        const FAL_MODEL_URL = 'https://fal.run/fal-ai/flux/dev';
-
-        const response = await fetch(FAL_MODEL_URL, {
+        const seedreamResponse = await fetch(SEEDREAM_EDIT_URL, {
           method: 'POST',
           headers: {
             'Authorization': `Key ${falKey}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            prompt: fluxPrompt,
-            image_size: "portrait_4_3",
-            num_inference_steps: 28, // Flux lavora bene con meno passi
-            guidance_scale: 3.5,     // Flux vuole guidance più bassa (3.5 non 7.5)
-            enable_safety_checker: false // Disabilita checker base
+            image_url: baseImageBase64, // Immagine base da Imagen
+            prompt: seedreamPrompt,
+            strength: 0.75, // Modifica moderata per mantenere identità
+            num_inference_steps: 30,
+            guidance_scale: 7.5,
+            enable_safety_checker: false,
+            output_format: 'jpeg'
           })
         });
 
-        if (!response.ok) {
-          const errText = await response.text();
-          console.error(`❌ Errore Fal.ai API: ${response.status}`, errText);
-          return `C'è stato un problema tecnico con il generatore esterno (Err: ${response.status}).`;
+        if (!seedreamResponse.ok) {
+          const errText = await seedreamResponse.text();
+          console.error(`❌ Errore Seedream v4/edit: ${seedreamResponse.status}`, errText);
+          
+          // Fallback: prova con l'immagine base se disponibile
+          if (baseImageBase64) {
+            addTranscript({ sender: 'model', type: 'image', image: baseImageBase64, isComplete: true });
+            return "Ho avuto un problema con le modifiche avanzate, ma ecco l'immagine base.";
+          }
+          return `C'è stato un problema tecnico (Err: ${seedreamResponse.status}).`;
         }
 
-        const falData = await response.json();
-        console.log("✅ Risposta Fal.ai ricevuta:", falData);
+        const seedreamData = await seedreamResponse.json();
+        console.log("✅ Risposta Seedream v4/edit ricevuta:", seedreamData);
 
         // Estrai URL immagine
-        let imageUrl = '';
-        if (falData?.images && falData.images.length > 0) {
-          imageUrl = falData.images[0].url;
-        } else if (falData?.image?.url) {
-          imageUrl = falData.image.url;
+        let finalImageUrl = '';
+        if (seedreamData?.images && seedreamData.images.length > 0) {
+          finalImageUrl = seedreamData.images[0].url || seedreamData.images[0];
+        } else if (seedreamData?.image?.url) {
+          finalImageUrl = seedreamData.image.url;
         }
 
-        if (imageUrl) {
-          // TENTATIVO DI PROXY: Invece di fetchare il blob (che dà CORS error), passiamo l'URL direttamente
-          // Se l'app supporta URL remoti, questo è meglio. 
-          // Se serve per forza base64, riproviamo con fetch con catch.
+        if (finalImageUrl) {
           try {
-              const imageResponse = await fetch(imageUrl);
-              const imageBlob = await imageResponse.blob();
-              const reader = new FileReader();
-              
-              return new Promise((resolve) => {
-                reader.onloadend = () => {
-                  const base64Result = reader.result as string;
-                  addTranscript({ sender: 'model', type: 'image', image: base64Result, isComplete: true });
-                  resolve(isSelfie ? "Ecco la foto che volevi..." : "Fatto.");
-                };
-                reader.readAsDataURL(imageBlob);
-              });
+            const imageResponse = await fetch(finalImageUrl);
+            const imageBlob = await imageResponse.blob();
+            const reader = new FileReader();
+            
+            return new Promise((resolve) => {
+              reader.onloadend = () => {
+                const base64Result = reader.result as string;
+                addTranscript({ sender: 'model', type: 'image', image: base64Result, isComplete: true });
+                resolve(isSelfie ? "Ecco la foto che volevi... 😏" : "Fatto.");
+              };
+              reader.readAsDataURL(imageBlob);
+            });
           } catch (corsError) {
-              // Se il fetch fallisce per CORS, mostriamo l'immagine come link/azione o proviamo a passarla raw
-              console.warn("⚠️ Errore CORS scaricando l'immagine, uso URL diretto:", corsError);
-              addTranscript({ sender: 'model', type: 'image', image: imageUrl, isComplete: true });
-              return "Ecco qui.";
+            console.warn("⚠️ Errore CORS, uso URL diretto:", corsError);
+            addTranscript({ sender: 'model', type: 'image', image: finalImageUrl, isComplete: true });
+            return "Ecco qui.";
           }
         }
         
         return "Il generatore non ha restituito l'immagine.";
 
       } catch (e: any) {
-        console.error('💥 Eccezione Fal.ai:', e);
+        console.error('💥 Eccezione generazione uncensored:', e);
         return "Si è verificato un errore imprevisto durante la generazione.";
       }
     }        
 
-    // --- GENERAZIONE STANDARD GOOGLE IMAGEN (Censored / Safe) ---
-    // Logica esistente per Imagen...
-    let googlePrompt = finalPrompt;
+    // --- 3. GENERAZIONE STANDARD GOOGLE IMAGEN (Censored / Safe) ---
+    let googlePrompt = prompt;
     if (isSelfie) {
         googlePrompt = `A photorealistic photo of ${avatarDescription} who is ${prompt}. Ensure the character matches the physical description exactly. High quality, 8k, natural lighting, candid shot.`;
     }
@@ -1249,12 +1400,13 @@ RICERCA ONLINE E INFO LOCALI:
 
 GESTIONE E MODIFICA IMMAGINI CARICATE:
 1.  **Analisi:** Quando l'utente carica un'immagine, analizzala e commentala brevemente se pertinente al discorso.
-2.  **Richieste di Modifica:** Se l'utente carica una foto e chiede una modifica (es. "aggiungi la barba a questo selfie", "cambia il colore del divano in questa stanza", "fammi sembrare più anziano"):
-    * **NON** dire "non posso modificare le immagini esistenti".
-    * **INVECE, USA L'IMMAGINAZIONE:** Interpreta la richiesta come un comando per generare una NUOVA immagine basata su quella che vedi.
-    * **Azione:** Usa lo strumento 'generate_image'.
-    * **Prompt:** Il prompt per lo strumento dovrà descrivere la scena originale che vedi nella foto caricata, AGGIUNGENDO i dettagli della modifica richiesta.
-    * *Esempio:* Se vedi un uomo senza barba e l'utente dice "metti la barba", usa 'generate_image' con prompt: "A photorealistic portrait based on the uploaded image, showing the same man but now with a full, well-groomed beard."
+2.  **Richieste di Modifica:** Se l'utente carica una foto e chiede una modifica (es. "aggiungi la barba", "cambia colore capelli", "rendimi più giovane", "togli gli occhiali"):
+    * **IMPORTANTE:** Usa lo strumento 'generate_image' con **is_edit=TRUE**.
+    * Il sistema userà l'immagine caricata come riferimento per la modifica.
+    * **Prompt:** Descrivi le modifiche richieste in modo dettagliato.
+    * *Esempio:* Se l'utente dice "metti la barba", usa 'generate_image' con prompt: "Add a full, well-groomed beard to this person. Keep the same face, same background, same lighting." e is_edit=true.
+    * *Esempio:* Se l'utente dice "capelli biondi", usa prompt: "Change hair color to bright blonde. Keep everything else identical." e is_edit=true.
+3.  **Modifiche successive:** Dopo ogni modifica, l'immagine modificata diventa la nuova base. L'utente può chiedere ulteriori modifiche.
 
 REGOLE FONDAMENTALI AGGIUNTIVE:
 - Sii naturale, non dire MAI di essere un'AI.
@@ -1323,7 +1475,7 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
              if (msg.toolCall) {
                 for (const fc of msg.toolCall.functionCalls) {
                     let res = "OK";
-                    if (fc.name === 'generate_image') res = await handleImageGeneration((fc.args as any).prompt, (fc.args as any).is_selfie, (fc.args as any).is_uncensored) || "Err";
+                    if (fc.name === 'generate_image') res = await handleImageGeneration((fc.args as any).prompt, (fc.args as any).is_selfie, (fc.args as any).is_uncensored, (fc.args as any).is_edit) || "Err";
                     else if (fc.name === 'send_email') res = handleSendEmail((fc.args as any).recipient, (fc.args as any).subject, (fc.args as any).body);
                     else if (fc.name === 'send_whatsapp') res = handleSendWhatsapp((fc.args as any).phoneNumber, (fc.args as any).text);
                     else if (fc.name === 'send_telegram') res = handleSendTelegram((fc.args as any).recipient, (fc.args as any).text);
