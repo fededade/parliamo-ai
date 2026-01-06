@@ -155,7 +155,7 @@ const sendTelegramTool: FunctionDeclaration = {
 
 const makeCallTool: FunctionDeclaration = {
   name: 'make_call',
-  description: 'Prepara una chiamata. PRIMA di usare questo strumento, chiedi: 1) Chi chiamare (Nome e Numero/Username), 2) Con quale app (Telefono classico, WhatsApp o Telegram).',
+  description: 'Prepara una chiamata. Se l\'utente dice solo un NOME (es. "chiama Marco"), USA PRIMA lo strumento "search_contact" per trovare il numero. Solo dopo aver ottenuto il numero, usa questo strumento.',
   parameters: {
     type: Type.OBJECT,
     properties: {
@@ -164,6 +164,18 @@ const makeCallTool: FunctionDeclaration = {
       name: { type: Type.STRING, description: 'Il nome della persona da chiamare (per l\'etichetta)' }
     },
     required: ['recipient', 'app'],
+  },
+};
+
+const searchContactTool: FunctionDeclaration = {
+  name: 'search_contact',
+  description: 'Cerca un contatto nella rubrica dell\'utente per nome. Usa questo strumento SEMPRE quando l\'utente vuole chiamare/messaggiare qualcuno usando solo il NOME (es. "chiama Marco", "scrivi a Giulia"). Restituisce il numero di telefono e altri dati del contatto.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      name: { type: Type.STRING, description: 'Nome o parte del nome del contatto da cercare' }
+    },
+    required: ['name'],
   },
 };
 
@@ -202,7 +214,8 @@ const allTools: Tool[] = [
       sendEmailTool, 
       sendWhatsappTool, 
       sendTelegramTool,
-      makeCallTool, 
+      makeCallTool,
+      searchContactTool,
       getCalendarEventsTool, 
       createCalendarEventTool
     ] 
@@ -383,6 +396,9 @@ const App: React.FC = () => {
   const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true); // Inizia visibile su mobile
   const [googleCalendarToken, setGoogleCalendarToken] = useState<string | null>(null); // Token per Google Calendar
+  const [isCalendarTokenValid, setIsCalendarTokenValid] = useState<boolean | null>(null); // Stato validità token
+  const [contacts, setContacts] = useState<Array<{id: string, name: string, phone: string, telegram?: string}>>([]); // Rubrica
+  const [showContactsModal, setShowContactsModal] = useState(false); // Modal rubrica
 
   // --- MEMORIA: Carica la storia all'avvio ---
   useEffect(() => {
@@ -408,6 +424,62 @@ const App: React.FC = () => {
     }
   }, [transcripts]);
 
+  // --- RUBRICA: Carica contatti da localStorage ---
+  useEffect(() => {
+    const savedContacts = localStorage.getItem('ti_ascolto_contacts');
+    if (savedContacts) {
+      try {
+        setContacts(JSON.parse(savedContacts));
+        console.log('📒 Rubrica caricata da localStorage');
+      } catch (e) {
+        console.error("Errore caricamento rubrica:", e);
+      }
+    }
+  }, []);
+
+  // --- RUBRICA: Salva contatti quando cambiano ---
+  useEffect(() => {
+    if (contacts.length > 0) {
+      localStorage.setItem('ti_ascolto_contacts', JSON.stringify(contacts));
+    }
+  }, [contacts]);
+
+  // --- CALENDARIO: Verifica periodica validità token ---
+  useEffect(() => {
+    const checkTokenValidity = async () => {
+      if (!googleCalendarToken) {
+        setIsCalendarTokenValid(false);
+        return;
+      }
+      
+      try {
+        const response = await fetch(
+          'https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=1',
+          { headers: { 'Authorization': `Bearer ${googleCalendarToken}` } }
+        );
+        
+        if (response.ok) {
+          setIsCalendarTokenValid(true);
+        } else if (response.status === 401) {
+          console.log('📅 Token calendario scaduto');
+          setGoogleCalendarToken(null);
+          setIsCalendarTokenValid(false);
+          localStorage.removeItem('google_calendar_token');
+        }
+      } catch (e) {
+        console.error('Errore verifica token calendario:', e);
+      }
+    };
+
+    // Verifica subito
+    checkTokenValidity();
+    
+    // Verifica ogni 5 minuti
+    const interval = setInterval(checkTokenValidity, 5 * 60 * 1000);
+    
+    return () => clearInterval(interval);
+  }, [googleCalendarToken]);
+
   // Refs
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
@@ -424,6 +496,9 @@ const App: React.FC = () => {
   const lastUserImageAnalysisRef = useRef<string>("");  // Salva la descrizione della foto
   const wakeLockRef = useRef<any>(null); // Per mantenere lo schermo attivo
   const lastUploadedImageRef = useRef<string | null>(null); // Ultima immagine caricata dall'utente per editing
+  const lastAudioProcessTimeRef = useRef<number>(0); // Per tracciare latenza audio
+  const audioQueueLengthRef = useRef<number>(0); // Contatore buffer in coda
+  const isImportingContactsRef = useRef<boolean>(false); // Flag per import contatti
 
   useEffect(() => {
     // VERCEL FIX: Defensive API Key retrieval
@@ -643,35 +718,45 @@ const App: React.FC = () => {
     }
   };
 
-const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, isUncensored: boolean = false): Promise<string | null> => {
+const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, isUncensored: boolean = false, isEdit: boolean = false): Promise<string | null> => {
     if (!aiRef.current) return null;
 
-    // --- STRADA 3: AVATAR HOT / UNCENSORED (Fal.ai Seedream Edit) ---
+    // --- STRADA 3: AVATAR HOT / UNCENSORED (Fal.ai con Image-to-Image) ---
+    // Questo rimane su fal.ai perché Imagen non permette contenuti NSFW
     if (isSelfie && isUncensored) {
         if (!avatarUrl) return "Non ho ancora una mia foto base per fare modifiche hot. Chiedimi prima un selfie normale.";
         
         try {
-            console.log("🔥 STRADA 3: Fal.ai Seedream Edit (Hot/Img2Img)");
+            console.log("🔥 STRADA 3: Fal.ai Image-to-Image (Hot/Uncensored)");
             addTranscript({ sender: 'model', type: 'text', text: `🌶️ Ok, chiudo la porta...`, isComplete: true });
 
             // @ts-ignore
             const falKey = (import.meta.env?.VITE_FAL_KEY || process.env?.VITE_FAL_KEY || '').trim();
             if (!falKey) return "Manca la chiave VITE_FAL_KEY per i contenuti speciali.";
 
-            const FAL_URL = 'https://fal.run/fal-ai/bytedance/seedream/v4/edit';
+            const FAL_URL = 'https://fal.run/fal-ai/flux/dev/image-to-image';
             
             const response = await fetch(FAL_URL, {
                 method: 'POST',
                 headers: { 'Authorization': `Key ${falKey}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    prompt: prompt + ", uncensored, nsfw, highly detailed",
-                    input_image_urls: [avatarUrl], // Usa l'avatar come base
+                    prompt: prompt + ", highly detailed, professional photo, 8k resolution",
+                    image_url: avatarUrl,
+                    strength: 0.75,
+                    num_inference_steps: 28,
+                    guidance_scale: 3.5,
                     image_size: "portrait_4_3",
-                    sync_mode: true
+                    sync_mode: true,
+                    enable_safety_checker: false
                 })
             });
 
-            if (!response.ok) throw new Error("Fal.ai Error");
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                console.error("Fal.ai Error:", response.status, errorData);
+                throw new Error(`Fal.ai Error: ${response.status}`);
+            }
+            
             const data = await response.json();
             const imgUrl = data.images?.[0]?.url || data.image?.url;
             
@@ -679,47 +764,148 @@ const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, 
                 addTranscript({ sender: 'model', type: 'image', image: imgUrl, isComplete: true });
                 return "Ecco qui (versione senza censure).";
             }
-        } catch (e) {
-            console.error("Errore Strada 3", e);
-            return "Errore nella generazione speciale.";
+        } catch (e: any) {
+            console.error("Errore Strada 3:", e);
+            return `Errore nella generazione speciale: ${e.message || 'sconosciuto'}`;
         }
         return "Errore sconosciuto Strada 3.";
     }
 
-    // --- PREPARAZIONE PER STRADA 1 e 2 (Google Imagen) ---
-    // Poiché Imagen SDK Web è Text-to-Image, simuliamo l'Image-to-Image costruendo un prompt 
-    // che include la descrizione esatta dell'immagine di partenza + le modifiche.
-    
+    // --- STRADA 1: MODIFICA FOTO UTENTE con Imagen Edit (Image-to-Image VERO) ---
+    if (isEdit && lastUserImageRef.current) {
+        console.log("🖼️ STRADA 1: Modifica Foto Utente con Imagen Edit (True Img2Img)");
+        addTranscript({ sender: 'model', type: 'text', text: `🎨 Modifico la tua foto con Imagen...`, isComplete: true });
+        
+        try {
+            // Estrai il base64 puro dall'immagine (rimuovi prefisso data:image/...)
+            const base64Match = lastUserImageRef.current.match(/^data:image\/\w+;base64,(.+)$/);
+            const rawBase64 = base64Match ? base64Match[1] : lastUserImageRef.current;
+            
+            // Usa l'API editImage di Imagen per vero image-to-image
+            // @ts-ignore - L'API editImage potrebbe non essere nei tipi
+            const editResponse = await aiRef.current.models.editImage({
+                model: 'imagen-3.0-capability-001',
+                prompt: `${prompt}. Maintain the same person, same pose, same background. Apply only the requested modifications. Photorealistic, high quality.`,
+                image: {
+                    bytesBase64Encoded: rawBase64
+                },
+                config: {
+                    numberOfImages: 1,
+                    outputMimeType: 'image/jpeg'
+                }
+            });
+
+            const editedImg = editResponse.generatedImages?.[0];
+            if (editedImg?.image?.imageBytes) {
+                const newImageUrl = `data:image/jpeg;base64,${editedImg.image.imageBytes}`;
+                // Aggiorna l'ultima immagine per modifiche successive
+                lastUserImageRef.current = newImageUrl;
+                // Aggiorna anche l'analisi per coerenza
+                lastUserImageAnalysisRef.current = `${lastUserImageAnalysisRef.current}. Modified: ${prompt}`;
+                addTranscript({ sender: 'model', type: 'image', image: newImageUrl, isComplete: true });
+                return "Fatto! Se vuoi altre modifiche, dimmelo.";
+            }
+        } catch (editError: any) {
+            console.warn("⚠️ Imagen editImage non disponibile o fallito, provo con generateImages + referenceImages:", editError.message);
+            
+            // FALLBACK 1: Prova con generateImages + referenceImages (style transfer)
+            try {
+                const base64Match = lastUserImageRef.current.match(/^data:image\/\w+;base64,(.+)$/);
+                const rawBase64 = base64Match ? base64Match[1] : lastUserImageRef.current;
+                
+                // @ts-ignore
+                const refResponse = await aiRef.current.models.generateImages({
+                    model: IMAGE_MODEL_NAME,
+                    prompt: `${lastUserImageAnalysisRef.current}. APPLY THESE CHANGES: ${prompt}. Keep the exact same person and pose. Photorealistic.`,
+                    referenceImages: [{
+                        referenceImage: {
+                            bytesBase64Encoded: rawBase64
+                        },
+                        referenceType: 'REFERENCE_TYPE_SUBJECT'
+                    }],
+                    config: { 
+                        numberOfImages: 1, 
+                        outputMimeType: 'image/jpeg', 
+                        aspectRatio: '3:4' 
+                    }
+                });
+
+                const refImg = refResponse.generatedImages?.[0];
+                if (refImg?.image?.imageBytes) {
+                    const newImageUrl = `data:image/jpeg;base64,${refImg.image.imageBytes}`;
+                    lastUserImageRef.current = newImageUrl;
+                    lastUserImageAnalysisRef.current = `${lastUserImageAnalysisRef.current}. Modified: ${prompt}`;
+                    addTranscript({ sender: 'model', type: 'image', image: newImageUrl, isComplete: true });
+                    return "Fatto! Se vuoi altre modifiche, dimmelo.";
+                }
+            } catch (refError: any) {
+                console.warn("⚠️ Imagen referenceImages non disponibile, uso fallback fal.ai:", refError.message);
+                
+                // FALLBACK 2: Usa fal.ai come ultima risorsa
+                try {
+                    // @ts-ignore
+                    const falKey = (import.meta.env?.VITE_FAL_KEY || process.env?.VITE_FAL_KEY || '').trim();
+                    if (falKey) {
+                        const FAL_URL = 'https://fal.run/fal-ai/flux/dev/image-to-image';
+                        const falResponse = await fetch(FAL_URL, {
+                            method: 'POST',
+                            headers: { 'Authorization': `Key ${falKey}`, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                prompt: `${lastUserImageAnalysisRef.current}. MODIFICATIONS: ${prompt}. Style: photorealistic, natural lighting, 8k resolution.`,
+                                image_url: lastUserImageRef.current,
+                                strength: 0.55, // Mantiene molto dell'originale
+                                num_inference_steps: 28,
+                                guidance_scale: 3.5,
+                                image_size: "portrait_4_3",
+                                sync_mode: true
+                            })
+                        });
+
+                        if (falResponse.ok) {
+                            const data = await falResponse.json();
+                            const imgUrl = data.images?.[0]?.url || data.image?.url;
+                            if (imgUrl) {
+                                lastUserImageRef.current = imgUrl;
+                                addTranscript({ sender: 'model', type: 'image', image: imgUrl, isComplete: true });
+                                return "Fatto! Se vuoi altre modifiche, dimmelo.";
+                            }
+                        }
+                    }
+                } catch (falError) {
+                    console.error("Anche Fal.ai fallito:", falError);
+                }
+            }
+        }
+        
+        // Se tutti i metodi img2img falliscono, usa text-to-image con prompt dettagliato
+        console.log("⚠️ Tutti i metodi img2img falliti, uso text-to-image con prompt dettagliato");
+    }
+
+    // --- STRADA 2: AVATAR NORMALE (Imagen Text-to-Image) ---
     let basePrompt = "";
     
     if (isSelfie) {
-        // --- STRADA 2: AVATAR NORMALE (Imagen Img2Img simulato) ---
         console.log("📸 STRADA 2: Avatar Normale su Imagen");
         
-        // Mappatura corporatura
         const bodyMap: any = { 'Minuta': 'petite', 'Normale': 'normal', 'Sportiva': 'athletic', 'Formoso/a': 'curvy' };
         const bodyEn = bodyMap[config.bodyType] || 'normal';
         
-        // Costruiamo il prompt usando i dati fissi dell'Avatar (Img2Img concettuale)
         basePrompt = `Photorealistic portrait of a ${config.age} year old ${config.gender}, ${config.hairColor} hair, ${config.eyeColor} eyes, ${config.skinTone} skin, ${bodyEn} build. ${config.physicalTraits || ''}.`;
-        
         addTranscript({ sender: 'model', type: 'text', text: `📸 Scatto la foto...`, isComplete: true });
 
     } else {
-        // --- STRADA 1: FOTO UTENTE (Imagen Img2Img simulato) ---
-        console.log("🖼️ STRADA 1: Modifica Foto Utente su Imagen");
+        // Modifica foto utente - fallback a text-to-image con descrizione
+        console.log("🖼️ Fallback: Text-to-Image con descrizione dettagliata");
         
         if (!lastUserImageAnalysisRef.current) {
             return "Non posso modificare la foto perché non l'ho analizzata o non ne hai caricata una di recente.";
         }
         
-        // Qui usiamo l'analisi della foto caricata come "Base"
-        basePrompt = `Recreate this specific image: ${lastUserImageAnalysisRef.current}.`;
-        addTranscript({ sender: 'model', type: 'text', text: `🎨 Modifico la tua foto...`, isComplete: true });
+        basePrompt = `Recreate this specific image exactly: ${lastUserImageAnalysisRef.current}.`;
+        addTranscript({ sender: 'model', type: 'text', text: `🎨 Ricreo la tua foto...`, isComplete: true });
     }
 
-    // Costruzione Prompt Finale per Imagen
-    // "Base Image Description" + "User Requested Changes" + "Style Enforcers"
+    // Costruzione Prompt Finale per Imagen Text-to-Image
     const finalImagenPrompt = `${basePrompt} MODIFICATIONS: ${prompt}. Style: 8k, photorealistic, raw photo, natural lighting.`;
 
     try {
@@ -732,6 +918,10 @@ const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, 
         const img = response.generatedImages?.[0];
         if (img?.image?.imageBytes) {
             const url = `data:image/jpeg;base64,${img.image.imageBytes}`;
+            // Se era una modifica foto utente, aggiorna il riferimento
+            if (!isSelfie && lastUserImageRef.current) {
+                lastUserImageRef.current = url;
+            }
             addTranscript({ sender: 'model', type: 'image', image: url, isComplete: true });
             return "Fatto.";
         }
@@ -798,6 +988,193 @@ const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, 
     });
     
     return "SUCCESS: Link di chiamata generato.";
+  };
+
+  // --- FUNZIONE RICERCA CONTATTI IN RUBRICA ---
+  const handleSearchContact = (searchName: string): string => {
+    const searchLower = searchName.toLowerCase().trim();
+    
+    if (contacts.length === 0) {
+      return "RUBRICA_VUOTA: La rubrica è vuota. Chiedi all'utente di aggiungere contatti dalla sidebar.";
+    }
+    
+    // Cerca corrispondenze
+    const matches = contacts.filter(c => 
+      c.name.toLowerCase().includes(searchLower)
+    );
+    
+    if (matches.length === 0) {
+      return `CONTATTO_NON_TROVATO: Nessun contatto trovato con nome "${searchName}". Contatti disponibili: ${contacts.map(c => c.name).join(', ')}`;
+    }
+    
+    if (matches.length === 1) {
+      const contact = matches[0];
+      return `CONTATTO_TROVATO: Nome: ${contact.name}, Telefono: ${contact.phone}${contact.telegram ? `, Telegram: ${contact.telegram}` : ''}. Ora puoi usare make_call con questi dati.`;
+    }
+    
+    // Più corrispondenze
+    const list = matches.map(c => `${c.name}: ${c.phone}`).join('; ');
+    return `MULTIPLI_CONTATTI: Trovati ${matches.length} contatti: ${list}. Chiedi all'utente quale intende.`;
+  };
+
+  // --- FUNZIONI GESTIONE RUBRICA ---
+  const addContact = (name: string, phone: string, telegram?: string) => {
+    const newContact = {
+      id: Date.now().toString(),
+      name: name.trim(),
+      phone: phone.trim(),
+      telegram: telegram?.trim()
+    };
+    setContacts(prev => [...prev, newContact]);
+  };
+
+  const removeContact = (id: string) => {
+    setContacts(prev => prev.filter(c => c.id !== id));
+  };
+
+  // --- IMPORTAZIONE CONTATTI DAL TELEFONO ---
+  const importContactsFromPhone = async () => {
+    // Verifica supporto Contact Picker API
+    if (!('contacts' in navigator && 'ContactsManager' in window)) {
+      // Fallback: prova con input file per vCard
+      alert('Il tuo browser non supporta l\'importazione diretta dei contatti.\n\nPuoi esportare i contatti dal telefono come file .vcf e importarli manualmente.');
+      return;
+    }
+
+    try {
+      isImportingContactsRef.current = true;
+      
+      // @ts-ignore - Contact Picker API
+      const contactsApi = navigator.contacts;
+      
+      // Richiedi i contatti con nome e telefono
+      const props = ['name', 'tel'];
+      const opts = { multiple: true };
+      
+      // @ts-ignore
+      const selectedContacts = await contactsApi.select(props, opts);
+      
+      if (selectedContacts && selectedContacts.length > 0) {
+        let importedCount = 0;
+        const newContacts: Array<{id: string, name: string, phone: string, telegram?: string}> = [];
+        
+        for (const contact of selectedContacts) {
+          const name = contact.name?.[0] || 'Senza nome';
+          const phones = contact.tel || [];
+          
+          // Prendi il primo numero di telefono disponibile
+          if (phones.length > 0) {
+            const phone = phones[0];
+            
+            // Verifica se il contatto esiste già
+            const exists = contacts.some(c => 
+              c.name.toLowerCase() === name.toLowerCase() || 
+              c.phone.replace(/\D/g, '') === phone.replace(/\D/g, '')
+            );
+            
+            if (!exists) {
+              newContacts.push({
+                id: Date.now().toString() + Math.random().toString(36),
+                name: name,
+                phone: phone,
+                telegram: undefined
+              });
+              importedCount++;
+            }
+          }
+        }
+        
+        if (newContacts.length > 0) {
+          setContacts(prev => [...prev, ...newContacts]);
+          alert(`✅ Importati ${importedCount} contatti!`);
+        } else {
+          alert('Nessun nuovo contatto da importare (potrebbero essere già presenti).');
+        }
+      }
+    } catch (error: any) {
+      if (error.name === 'SecurityError') {
+        alert('Permesso negato. Consenti l\'accesso ai contatti nelle impostazioni del browser.');
+      } else if (error.name === 'InvalidStateError') {
+        alert('Operazione annullata.');
+      } else {
+        console.error('Errore importazione contatti:', error);
+        alert('Errore durante l\'importazione: ' + (error.message || 'Sconosciuto'));
+      }
+    } finally {
+      isImportingContactsRef.current = false;
+    }
+  };
+
+  // --- IMPORTAZIONE DA FILE vCard (.vcf) ---
+  const handleVcfImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target?.result as string;
+      if (!content) return;
+
+      const newContacts: Array<{id: string, name: string, phone: string, telegram?: string}> = [];
+      
+      // Parse semplice del vCard
+      const vCards = content.split('BEGIN:VCARD');
+      
+      for (const vCard of vCards) {
+        if (!vCard.trim()) continue;
+        
+        let name = '';
+        let phone = '';
+        
+        // Estrai nome (FN = Full Name)
+        const fnMatch = vCard.match(/FN[;:]([^\r\n]+)/i);
+        if (fnMatch) {
+          name = fnMatch[1].replace(/^[;:]+/, '').trim();
+        }
+        
+        // Fallback su N (Name)
+        if (!name) {
+          const nMatch = vCard.match(/\nN[;:]([^\r\n]+)/i);
+          if (nMatch) {
+            const parts = nMatch[1].split(';');
+            name = parts.filter(p => p.trim()).reverse().join(' ').trim();
+          }
+        }
+        
+        // Estrai telefono
+        const telMatch = vCard.match(/TEL[;:\w]*:([+\d\s\-()]+)/i);
+        if (telMatch) {
+          phone = telMatch[1].trim();
+        }
+        
+        if (name && phone) {
+          // Verifica duplicati
+          const exists = contacts.some(c => 
+            c.name.toLowerCase() === name.toLowerCase() || 
+            c.phone.replace(/\D/g, '') === phone.replace(/\D/g, '')
+          );
+          
+          if (!exists && !newContacts.some(c => c.phone.replace(/\D/g, '') === phone.replace(/\D/g, ''))) {
+            newContacts.push({
+              id: Date.now().toString() + Math.random().toString(36),
+              name,
+              phone,
+              telegram: undefined
+            });
+          }
+        }
+      }
+      
+      if (newContacts.length > 0) {
+        setContacts(prev => [...prev, ...newContacts]);
+        alert(`✅ Importati ${newContacts.length} contatti dal file!`);
+      } else {
+        alert('Nessun nuovo contatto trovato nel file.');
+      }
+    };
+    
+    reader.readAsText(file);
+    event.target.value = ''; // Reset input
   };
 
   // --- GOOGLE CALENDAR FUNCTIONS ---
@@ -1219,11 +1596,12 @@ MESSAGGI (Email, WhatsApp, Telegram):
 - Quando hai tutto, conferma con l'utente prima di procedere.
 
 CHIAMATE (Telefono, WhatsApp, Telegram):
-- Se l'utente vuole CHIAMARE o TELEFONARE a qualcuno, usa lo strumento 'make_call'.
-- Devi chiedere:
-  1. Chi chiamare (e il numero/username se non lo sai).
-  2. Con quale app preferisce chiamare (Telefono normale, WhatsApp o Telegram).
-- Se l'utente dice solo "Chiama Marco", chiedi "Vuoi chiamarlo al telefono normale o su WhatsApp?".
+- Se l'utente vuole CHIAMARE o TELEFONARE a qualcuno, hai DUE opzioni:
+  1. Se l'utente dice solo un NOME (es. "chiama Marco", "telefona a Giulia"), USA PRIMA 'search_contact' per cercare nella rubrica.
+  2. Se l'utente fornisce già il numero o la rubrica è vuota, usa direttamente 'make_call'.
+- RUBRICA ATTUALE: ${contacts.length > 0 ? `Contiene ${contacts.length} contatti: ${contacts.map(c => c.name).join(', ')}.` : 'La rubrica è vuota. Se l\'utente vuole chiamare qualcuno per nome, chiedigli di aggiungere contatti dalla sidebar.'}
+- Dopo aver ottenuto il numero con 'search_contact', chiedi con quale app preferisce chiamare (Telefono normale, WhatsApp o Telegram).
+- NON inventare numeri. Usa SOLO quelli restituiti da 'search_contact' o forniti dall'utente.
 
 CALENDARIO (Protocollo Rigoroso):
 - STATO ATTUALE: ${googleCalendarToken ? 'Il calendario è CONNESSO e puoi leggere/creare eventi.' : 'Il calendario NON è connesso. Se chiedono eventi, dii di connetterlo dalla sidebar.'}
@@ -1253,16 +1631,60 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
             const ctx = inputAudioContextRef.current!;
             const source = ctx.createMediaStreamSource(stream);
             inputSourceRef.current = source;
-            const processor = ctx.createScriptProcessor(4096, 1, 1);
+            
+            // LATENCY FIX: Usa buffer più piccolo per ridurre latenza base
+            const processor = ctx.createScriptProcessor(2048, 1, 1);
             processorRef.current = processor;
+            
+            // Reset contatori latenza
+            lastAudioProcessTimeRef.current = performance.now();
+            audioQueueLengthRef.current = 0;
+            
             processor.onaudioprocess = (e) => {
+              const now = performance.now();
+              const timeSinceLastProcess = now - lastAudioProcessTimeRef.current;
+              
+              // LATENCY FIX: Se sono passati più di 500ms dall'ultimo processo,
+              // significa che c'è accumulo. Salta questo buffer per recuperare.
+              if (timeSinceLastProcess > 500) {
+                console.warn(`⚠️ Audio lag detected: ${timeSinceLastProcess.toFixed(0)}ms - skipping buffer`);
+                lastAudioProcessTimeRef.current = now;
+                audioQueueLengthRef.current = 0;
+                return; // Salta questo buffer
+              }
+              
+              // LATENCY FIX: Se la coda è troppo lunga (>5 buffer), salta
+              audioQueueLengthRef.current++;
+              if (audioQueueLengthRef.current > 5) {
+                console.warn(`⚠️ Buffer queue overflow: ${audioQueueLengthRef.current} - skipping`);
+                audioQueueLengthRef.current = 0;
+                lastAudioProcessTimeRef.current = now;
+                return;
+              }
+              
+              lastAudioProcessTimeRef.current = now;
+              
               const inputData = e.inputBuffer.getChannelData(0);
-              let sum = 0;
-              for(let i=0;i<inputData.length;i++) sum+=inputData[i]*inputData[i];
-              if(Math.random()>0.8) setAudioVolume(Math.sqrt(sum/inputData.length)*5);
-              if(isMutedRef.current) return; // Usa il ref invece dello state
-              sessionPromiseRef.current?.then(session => session.sendRealtimeInput({ media: createBlob(inputData) })).catch(console.error);
+              
+              // Calcola volume per visualizzazione (meno frequente)
+              if (Math.random() > 0.9) {
+                let sum = 0;
+                for(let i = 0; i < inputData.length; i += 4) sum += inputData[i] * inputData[i];
+                setAudioVolume(Math.sqrt(sum / (inputData.length / 4)) * 5);
+              }
+              
+              if (isMutedRef.current) return;
+              
+              // Invia audio al server
+              sessionPromiseRef.current?.then(session => {
+                session.sendRealtimeInput({ media: createBlob(inputData) });
+                audioQueueLengthRef.current = Math.max(0, audioQueueLengthRef.current - 1);
+              }).catch(err => {
+                console.error('Error sending audio:', err);
+                audioQueueLengthRef.current = 0;
+              });
             };
+            
             source.connect(processor);
             processor.connect(ctx.destination);
           },
@@ -1275,6 +1697,7 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
                     else if (fc.name === 'send_whatsapp') res = handleSendWhatsapp((fc.args as any).phoneNumber, (fc.args as any).text);
                     else if (fc.name === 'send_telegram') res = handleSendTelegram((fc.args as any).recipient, (fc.args as any).text);
                     else if (fc.name === 'make_call') res = handleMakeCall((fc.args as any).recipient, (fc.args as any).app, (fc.args as any).name);
+                    else if (fc.name === 'search_contact') res = handleSearchContact((fc.args as any).name);
                     else if (fc.name === 'get_calendar_events') res = await handleGetCalendarEvents((fc.args as any).days_ahead || 7);
                     else if (fc.name === 'create_calendar_event') {
                       const args = fc.args as any;
@@ -2335,7 +2758,7 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
           
           {/* Google Calendar Connection - MODIFICATO: SEMPRE VISIBILE */}
           <div style={{ marginTop: '12px' }}>
-              {googleCalendarToken ? (
+              {googleCalendarToken && isCalendarTokenValid ? (
                 <div style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -2362,6 +2785,37 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
                     }}
                   >
                     Disconnetti
+                  </button>
+                </div>
+              ) : googleCalendarToken && isCalendarTokenValid === false ? (
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  padding: '10px 12px',
+                  backgroundColor: '#fef2f2',
+                  borderRadius: '10px',
+                  border: '1px solid #fecaca'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Calendar size={16} style={{ color: '#ef4444' }} />
+                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#dc2626' }}>Sessione scaduta</span>
+                  </div>
+                  <button
+                    onClick={initGoogleCalendar}
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      backgroundColor: '#ef4444',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Riconnetti Calendar
                   </button>
                 </div>
               ) : (
@@ -2415,6 +2869,33 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
                   </div>
                 </div>
               )}
+          </div>
+          
+          {/* RUBRICA CONTATTI */}
+          <div style={{ marginTop: '12px' }}>
+            <button
+              onClick={() => setShowContactsModal(true)}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px',
+                padding: '12px 16px',
+                backgroundColor: 'white',
+                color: '#6366f1',
+                borderRadius: '12px',
+                border: '1px solid #c7d2fe',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: 600,
+                transition: 'all 0.2s',
+                boxShadow: '0 2px 8px rgba(99, 102, 241, 0.1)'
+              }}
+            >
+              <Phone size={16} />
+              Rubrica ({contacts.length})
+            </button>
           </div>
           
           {/* Pulsante Nuovo Assistente */}
@@ -2909,7 +3390,7 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
         }}>
 {/* --- NUOVO BLOCCO CALENDARIO PER MOBILE --- */}
           <div className="mobile-calendar-container" style={{ padding: '10px 16px 0 16px' }}>
-              {googleCalendarToken ? (
+              {googleCalendarToken && isCalendarTokenValid ? (
                 <div style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -2938,6 +3419,37 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
                     Disconnetti
                   </button>
                 </div>
+              ) : googleCalendarToken && isCalendarTokenValid === false ? (
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                  padding: '8px 12px',
+                  backgroundColor: '#fef2f2',
+                  borderRadius: '10px',
+                  border: '1px solid #fecaca'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Calendar size={14} style={{ color: '#ef4444' }} />
+                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#dc2626' }}>Sessione scaduta</span>
+                  </div>
+                  <button
+                    onClick={initGoogleCalendar}
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      backgroundColor: '#ef4444',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Riconnetti
+                  </button>
+                </div>
               ) : (
                 <button
                   onClick={initGoogleCalendar}
@@ -2962,6 +3474,31 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
                   {GOOGLE_CLIENT_ID ? "Connetti Google Calendar" : "Configura Calendar"}
                 </button>
               )}
+          </div>
+          
+          {/* Pulsante Rubrica Mobile */}
+          <div style={{ padding: '8px 16px 0 16px' }}>
+            <button
+              onClick={() => setShowContactsModal(true)}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                padding: '10px 14px',
+                backgroundColor: '#eef2ff',
+                color: '#6366f1',
+                borderRadius: '10px',
+                border: '1px solid #c7d2fe',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: 600
+              }}
+            >
+              <Phone size={14} />
+              Rubrica ({contacts.length})
+            </button>
           </div>
           
           {/* Pulsante Nuovo Assistente Mobile */}
@@ -3148,6 +3685,264 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
           </div>
         </div>
       </main>
+      
+      {/* MODAL RUBRICA */}
+      {showContactsModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }} onClick={() => setShowContactsModal(false)}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '16px',
+            padding: '24px',
+            maxWidth: '400px',
+            width: '100%',
+            maxHeight: '80vh',
+            overflow: 'auto',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.2)'
+          }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 700, color: '#1e293b' }}>
+              📒 Rubrica Contatti
+            </h3>
+            
+            {/* Pulsanti Importazione */}
+            <div style={{ 
+              display: 'flex', 
+              gap: '8px', 
+              marginBottom: '16px',
+              padding: '12px',
+              backgroundColor: '#eef2ff',
+              borderRadius: '10px',
+              border: '1px solid #c7d2fe'
+            }}>
+              <button
+                onClick={importContactsFromPhone}
+                style={{
+                  flex: 1,
+                  padding: '10px 8px',
+                  backgroundColor: '#6366f1',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px'
+                }}
+              >
+                <Phone size={14} />
+                Importa dal Telefono
+              </button>
+              
+              <label style={{
+                flex: 1,
+                padding: '10px 8px',
+                backgroundColor: 'white',
+                color: '#6366f1',
+                border: '1px solid #c7d2fe',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px'
+              }}>
+                <Download size={14} />
+                Importa .vcf
+                <input
+                  type="file"
+                  accept=".vcf,.vcard"
+                  onChange={handleVcfImport}
+                  style={{ display: 'none' }}
+                />
+              </label>
+            </div>
+            
+            <p style={{ 
+              fontSize: '10px', 
+              color: '#64748b', 
+              margin: '0 0 16px 0',
+              textAlign: 'center'
+            }}>
+              💡 Su Android/Chrome puoi importare direttamente. Su iOS/Safari esporta i contatti come file .vcf
+            </p>
+            
+            {/* Form per aggiungere contatto */}
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const form = e.target as HTMLFormElement;
+              const name = (form.elements.namedItem('contactName') as HTMLInputElement).value;
+              const phone = (form.elements.namedItem('contactPhone') as HTMLInputElement).value;
+              const telegram = (form.elements.namedItem('contactTelegram') as HTMLInputElement).value;
+              if (name && phone) {
+                addContact(name, phone, telegram || undefined);
+                form.reset();
+              }
+            }} style={{ marginBottom: '20px', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '12px' }}>
+              <div style={{ marginBottom: '12px' }}>
+                <input
+                  name="contactName"
+                  type="text"
+                  placeholder="Nome *"
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '14px',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+              <div style={{ marginBottom: '12px' }}>
+                <input
+                  name="contactPhone"
+                  type="tel"
+                  placeholder="Telefono (es. +393331234567) *"
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '14px',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+              <div style={{ marginBottom: '12px' }}>
+                <input
+                  name="contactTelegram"
+                  type="text"
+                  placeholder="Username Telegram (opzionale)"
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '14px',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+              <button
+                type="submit"
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  backgroundColor: '#6366f1',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                + Aggiungi Contatto
+              </button>
+            </form>
+            
+            {/* Lista contatti */}
+            <div style={{ maxHeight: '300px', overflow: 'auto' }}>
+              {contacts.length === 0 ? (
+                <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>
+                  Nessun contatto. Aggiungi contatti per poter dire "Chiama Marco" all'assistente!
+                </p>
+              ) : (
+                contacts.map(contact => (
+                  <div key={contact.id} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px',
+                    borderBottom: '1px solid #f1f5f9'
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: '14px', color: '#1e293b' }}>{contact.name}</div>
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>{contact.phone}</div>
+                      {contact.telegram && (
+                        <div style={{ fontSize: '11px', color: '#0ea5e9' }}>@{contact.telegram}</div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => removeContact(contact.id)}
+                      style={{
+                        padding: '6px 12px',
+                        backgroundColor: '#fef2f2',
+                        color: '#ef4444',
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontSize: '11px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Elimina
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            
+            {/* Pulsanti azione */}
+            <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+              {contacts.length > 0 && (
+                <button
+                  onClick={() => {
+                    if (window.confirm(`Vuoi eliminare tutti i ${contacts.length} contatti?`)) {
+                      setContacts([]);
+                      localStorage.removeItem('ti_ascolto_contacts');
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    backgroundColor: '#fef2f2',
+                    color: '#ef4444',
+                    border: '1px solid #fecaca',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Elimina Tutti ({contacts.length})
+                </button>
+              )}
+              <button
+                onClick={() => setShowContactsModal(false)}
+                style={{
+                  flex: contacts.length > 0 ? 1 : undefined,
+                  width: contacts.length > 0 ? undefined : '100%',
+                  padding: '12px',
+                  backgroundColor: '#f1f5f9',
+                  color: '#64748b',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  cursor: 'pointer'
+                }}
+              >
+                Chiudi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
