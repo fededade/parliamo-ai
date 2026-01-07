@@ -396,8 +396,10 @@ const App: React.FC = () => {
   const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true); // Inizia visibile su mobile
   const [googleCalendarToken, setGoogleCalendarToken] = useState<string | null>(null); // Token per Google Calendar
+  const googleCalendarTokenRef = useRef<string | null>(null); // Ref per accesso sincronizzato
   const [isCalendarTokenValid, setIsCalendarTokenValid] = useState<boolean | null>(null); // Stato validità token
   const [contacts, setContacts] = useState<Array<{id: string, name: string, phone: string, telegram?: string}>>([]); // Rubrica
+  const contactsRef = useRef<Array<{id: string, name: string, phone: string, telegram?: string}>>([]); // Ref per accesso sincronizzato
   const [showContactsModal, setShowContactsModal] = useState(false); // Modal rubrica
 
   // --- MEMORIA: Carica la storia all'avvio ---
@@ -442,7 +444,14 @@ const App: React.FC = () => {
     if (contacts.length > 0) {
       localStorage.setItem('ti_ascolto_contacts', JSON.stringify(contacts));
     }
+    // Sincronizza il ref
+    contactsRef.current = contacts;
   }, [contacts]);
+
+  // --- Sincronizza token ref con state ---
+  useEffect(() => {
+    googleCalendarTokenRef.current = googleCalendarToken;
+  }, [googleCalendarToken]);
 
   // --- CALENDARIO: Verifica periodica validità token ---
   useEffect(() => {
@@ -605,10 +614,16 @@ const App: React.FC = () => {
             session.sendClientContent({ 
               turns: [{ 
                   role: 'user', 
-                  parts: [{ text: `[SYSTEM: L'utente ha caricato una foto. Analisi salvata: "${analysis}". 
-                  SE chiede modifiche a QUESTA foto, usa 'generate_image' (is_selfie=false).
-                  SE chiede un selfie tuo, usa 'generate_image' (is_selfie=true).]` }] 
-                }] 
+                  parts: [{ text: `[SYSTEM: L'utente ha appena caricato una foto. Ho analizzato l'immagine: "${analysis}". 
+                  
+ISTRUZIONI CRITICHE:
+- Se l'utente chiede di MODIFICARE questa foto (es. "aggiungi barba", "cambia colore capelli", "rendimi biondo"), 
+  DEVI usare 'generate_image' con is_edit=TRUE e is_selfie=FALSE.
+- Se l'utente chiede un TUO selfie/foto, usa is_selfie=TRUE e is_edit=FALSE.
+- Il parametro is_edit=TRUE è FONDAMENTALE per modificare la foto caricata!
+
+Commenta brevemente la foto se appropriato, poi aspetta istruzioni.]` }] 
+              }] 
             });
           } else {
              // Fallback offline
@@ -721,40 +736,145 @@ const App: React.FC = () => {
 const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, isUncensored: boolean = false, isEdit: boolean = false): Promise<string | null> => {
     if (!aiRef.current) return null;
 
-    // --- STRADA 3: AVATAR HOT / UNCENSORED (Fal.ai con Image-to-Image) ---
-    // Questo rimane su fal.ai perché Imagen non permette contenuti NSFW
-    if (isSelfie && isUncensored) {
-        if (!avatarUrl) return "Non ho ancora una mia foto base per fare modifiche hot. Chiedimi prima un selfie normale.";
+    console.log(`🖼️ === IMAGE GENERATION START ===`);
+    console.log(`📝 Prompt: "${prompt}"`);
+    console.log(`🎯 Flags: isSelfie=${isSelfie}, isEdit=${isEdit}, isUncensored=${isUncensored}`);
+    console.log(`📷 lastUserImage presente: ${!!lastUserImageRef.current}`);
+    console.log(`👤 avatarUrl presente: ${!!avatarUrl}`);
+
+    // @ts-ignore
+    const falKey = (import.meta.env?.VITE_FAL_KEY || process.env?.VITE_FAL_KEY || '').trim();
+
+    // ============================================
+    // CASO 1: MODIFICA FOTO UTENTE (is_edit=true)
+    // USA IMAGEN con descrizione dettagliata
+    // ============================================
+    if (isEdit) {
+        console.log("🎨 >>> CASO 1: Modifica foto utente con IMAGEN");
         
+        if (!lastUserImageAnalysisRef.current) {
+            return "Non hai caricato nessuna foto da modificare. Carica prima una foto!";
+        }
+        
+        addTranscript({ sender: 'model', type: 'text', text: `🎨 Modifico la tua foto...`, isComplete: true });
+        
+        // Costruisci prompt dettagliato basato sull'analisi + modifiche richieste
+        const imagenPrompt = `Photorealistic image based on this description: ${lastUserImageAnalysisRef.current}
+
+IMPORTANT - APPLY THESE MODIFICATIONS: ${prompt}
+
+The final image MUST show these changes: ${prompt}. 
+Style: photorealistic, high quality, natural lighting, 8k resolution.`;
+        
+        console.log("📤 Imagen prompt:", imagenPrompt.substring(0, 300) + "...");
+
         try {
-            console.log("🔥 STRADA 3: Fal.ai Image-to-Image (Hot/Uncensored)");
-            addTranscript({ sender: 'model', type: 'text', text: `🌶️ Ok, chiudo la porta...`, isComplete: true });
+            const response = await aiRef.current.models.generateImages({
+                model: IMAGE_MODEL_NAME,
+                prompt: imagenPrompt,
+                config: { numberOfImages: 1, outputMimeType: 'image/jpeg', aspectRatio: '3:4' }
+            });
 
-            // @ts-ignore
-            const falKey = (import.meta.env?.VITE_FAL_KEY || process.env?.VITE_FAL_KEY || '').trim();
-            if (!falKey) return "Manca la chiave VITE_FAL_KEY per i contenuti speciali.";
+            const img = response.generatedImages?.[0];
+            if (img?.image?.imageBytes) {
+                const url = `data:image/jpeg;base64,${img.image.imageBytes}`;
+                lastUserImageRef.current = url;
+                // Aggiorna l'analisi per modifiche successive
+                lastUserImageAnalysisRef.current = `${lastUserImageAnalysisRef.current}. Applied changes: ${prompt}`;
+                addTranscript({ sender: 'model', type: 'image', image: url, isComplete: true });
+                return "Ecco! Se vuoi altre modifiche, dimmelo.";
+            }
+            return "L'immagine è stata bloccata dai filtri di sicurezza. Prova con una richiesta diversa.";
+        } catch (e: any) {
+            console.error("❌ Imagen edit error:", e);
+            return `Errore: ${e.message}`;
+        }
+    }
 
-            const FAL_URL = 'https://fal.run/fal-ai/flux/dev/image-to-image';
+    // ============================================
+    // CASO 2: AVATAR UNCENSORED 
+    // USA FAL.AI (unico caso!)
+    // ============================================
+    if (isSelfie && isUncensored) {
+        console.log("🔥 >>> CASO 2: Avatar uncensored con FAL.AI");
+        
+        if (!avatarUrl && !config.physicalTraits) {
+            return "Non ho ancora un aspetto definito. Chiedimi prima un selfie normale per creare la mia immagine base.";
+        }
+        
+        addTranscript({ sender: 'model', type: 'text', text: `🌶️ Mmh, ok... aspetta un attimo...`, isComplete: true });
+
+        if (!falKey) {
+            return "Per questo tipo di contenuto serve una configurazione speciale non disponibile.";
+        }
+
+        try {
+            const genderWord = config.gender === 'Donna' ? 'woman' : config.gender === 'Uomo' ? 'man' : 'person';
+            const bodyMap: any = { 
+                'Minuta': 'petite slim body', 
+                'Normale': 'average body', 
+                'Sportiva': 'athletic toned body', 
+                'Formoso/a': 'curvy voluptuous body',
+                'Taglia comoda': 'plus size body'
+            };
+            const bodyDesc = bodyMap[config.bodyType] || 'average body';
+            
+            const adultPrompt = `${prompt}. 
+Portrait of a beautiful ${genderWord}, ${config.age} years old.
+Physical features: ${config.hairColor} hair, ${config.eyeColor} eyes, ${config.skinTone} skin, ${bodyDesc}.
+${config.physicalTraits || ''}
+Style: intimate boudoir photography, sensual pose, soft romantic lighting, artistic, high fashion, professional quality, 8k.`;
+            
+            console.log("📤 Fal.ai adult prompt:", adultPrompt.substring(0, 200) + "...");
+            
+            // Se abbiamo un avatar, usa image-to-image
+            if (avatarUrl) {
+                const FAL_URL = 'https://fal.run/fal-ai/flux/dev/image-to-image';
+                
+                const response = await fetch(FAL_URL, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Key ${falKey}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prompt: adultPrompt,
+                        image_url: avatarUrl,
+                        strength: 0.75,
+                        num_inference_steps: 35,
+                        guidance_scale: 7.5,
+                        image_size: "portrait_4_3",
+                        sync_mode: true,
+                        enable_safety_checker: false
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const imgUrl = data.images?.[0]?.url || data.image?.url;
+                    if (imgUrl) {
+                        addTranscript({ sender: 'model', type: 'image', image: imgUrl, isComplete: true });
+                        return "Eccomi... spero ti piaccia 😊";
+                    }
+                }
+            }
+            
+            // Fallback: text-to-image puro
+            const FAL_URL = 'https://fal.run/fal-ai/flux/dev';
             
             const response = await fetch(FAL_URL, {
                 method: 'POST',
                 headers: { 'Authorization': `Key ${falKey}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    prompt: prompt + ", highly detailed, professional photo, 8k resolution",
-                    image_url: avatarUrl,
-                    strength: 0.75,
-                    num_inference_steps: 28,
-                    guidance_scale: 3.5,
+                    prompt: adultPrompt,
+                    num_inference_steps: 35,
+                    guidance_scale: 7.5,
                     image_size: "portrait_4_3",
                     sync_mode: true,
+                    num_images: 1,
                     enable_safety_checker: false
                 })
             });
 
             if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                console.error("Fal.ai Error:", response.status, errorData);
-                throw new Error(`Fal.ai Error: ${response.status}`);
+                throw new Error(`Non sono riuscita a generare l'immagine.`);
             }
             
             const data = await response.json();
@@ -762,173 +882,79 @@ const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, 
             
             if (imgUrl) {
                 addTranscript({ sender: 'model', type: 'image', image: imgUrl, isComplete: true });
-                return "Ecco qui (versione senza censure).";
+                return "Eccomi... spero ti piaccia 😊";
             }
+            
+            return "L'immagine non è stata generata. Prova con una richiesta diversa.";
+            
         } catch (e: any) {
-            console.error("Errore Strada 3:", e);
-            return `Errore nella generazione speciale: ${e.message || 'sconosciuto'}`;
+            console.error("❌ Fal.ai uncensored error:", e);
+            return e.message || "Errore nella generazione.";
         }
-        return "Errore sconosciuto Strada 3.";
     }
 
-    // --- STRADA 1: MODIFICA FOTO UTENTE con Imagen Edit (Image-to-Image VERO) ---
-    if (isEdit && lastUserImageRef.current) {
-        console.log("🖼️ STRADA 1: Modifica Foto Utente con Imagen Edit (True Img2Img)");
-        addTranscript({ sender: 'model', type: 'text', text: `🎨 Modifico la tua foto con Imagen...`, isComplete: true });
-        
-        try {
-            // Estrai il base64 puro dall'immagine (rimuovi prefisso data:image/...)
-            const base64Match = lastUserImageRef.current.match(/^data:image\/\w+;base64,(.+)$/);
-            const rawBase64 = base64Match ? base64Match[1] : lastUserImageRef.current;
-            
-            // Usa l'API editImage di Imagen per vero image-to-image
-            // @ts-ignore - L'API editImage potrebbe non essere nei tipi
-            const editResponse = await aiRef.current.models.editImage({
-                model: 'imagen-3.0-capability-001',
-                prompt: `${prompt}. Maintain the same person, same pose, same background. Apply only the requested modifications. Photorealistic, high quality.`,
-                image: {
-                    bytesBase64Encoded: rawBase64
-                },
-                config: {
-                    numberOfImages: 1,
-                    outputMimeType: 'image/jpeg'
-                }
-            });
-
-            const editedImg = editResponse.generatedImages?.[0];
-            if (editedImg?.image?.imageBytes) {
-                const newImageUrl = `data:image/jpeg;base64,${editedImg.image.imageBytes}`;
-                // Aggiorna l'ultima immagine per modifiche successive
-                lastUserImageRef.current = newImageUrl;
-                // Aggiorna anche l'analisi per coerenza
-                lastUserImageAnalysisRef.current = `${lastUserImageAnalysisRef.current}. Modified: ${prompt}`;
-                addTranscript({ sender: 'model', type: 'image', image: newImageUrl, isComplete: true });
-                return "Fatto! Se vuoi altre modifiche, dimmelo.";
-            }
-        } catch (editError: any) {
-            console.warn("⚠️ Imagen editImage non disponibile o fallito, provo con generateImages + referenceImages:", editError.message);
-            
-            // FALLBACK 1: Prova con generateImages + referenceImages (style transfer)
-            try {
-                const base64Match = lastUserImageRef.current.match(/^data:image\/\w+;base64,(.+)$/);
-                const rawBase64 = base64Match ? base64Match[1] : lastUserImageRef.current;
-                
-                // @ts-ignore
-                const refResponse = await aiRef.current.models.generateImages({
-                    model: IMAGE_MODEL_NAME,
-                    prompt: `${lastUserImageAnalysisRef.current}. APPLY THESE CHANGES: ${prompt}. Keep the exact same person and pose. Photorealistic.`,
-                    referenceImages: [{
-                        referenceImage: {
-                            bytesBase64Encoded: rawBase64
-                        },
-                        referenceType: 'REFERENCE_TYPE_SUBJECT'
-                    }],
-                    config: { 
-                        numberOfImages: 1, 
-                        outputMimeType: 'image/jpeg', 
-                        aspectRatio: '3:4' 
-                    }
-                });
-
-                const refImg = refResponse.generatedImages?.[0];
-                if (refImg?.image?.imageBytes) {
-                    const newImageUrl = `data:image/jpeg;base64,${refImg.image.imageBytes}`;
-                    lastUserImageRef.current = newImageUrl;
-                    lastUserImageAnalysisRef.current = `${lastUserImageAnalysisRef.current}. Modified: ${prompt}`;
-                    addTranscript({ sender: 'model', type: 'image', image: newImageUrl, isComplete: true });
-                    return "Fatto! Se vuoi altre modifiche, dimmelo.";
-                }
-            } catch (refError: any) {
-                console.warn("⚠️ Imagen referenceImages non disponibile, uso fallback fal.ai:", refError.message);
-                
-                // FALLBACK 2: Usa fal.ai come ultima risorsa
-                try {
-                    // @ts-ignore
-                    const falKey = (import.meta.env?.VITE_FAL_KEY || process.env?.VITE_FAL_KEY || '').trim();
-                    if (falKey) {
-                        const FAL_URL = 'https://fal.run/fal-ai/flux/dev/image-to-image';
-                        const falResponse = await fetch(FAL_URL, {
-                            method: 'POST',
-                            headers: { 'Authorization': `Key ${falKey}`, 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                prompt: `${lastUserImageAnalysisRef.current}. MODIFICATIONS: ${prompt}. Style: photorealistic, natural lighting, 8k resolution.`,
-                                image_url: lastUserImageRef.current,
-                                strength: 0.55, // Mantiene molto dell'originale
-                                num_inference_steps: 28,
-                                guidance_scale: 3.5,
-                                image_size: "portrait_4_3",
-                                sync_mode: true
-                            })
-                        });
-
-                        if (falResponse.ok) {
-                            const data = await falResponse.json();
-                            const imgUrl = data.images?.[0]?.url || data.image?.url;
-                            if (imgUrl) {
-                                lastUserImageRef.current = imgUrl;
-                                addTranscript({ sender: 'model', type: 'image', image: imgUrl, isComplete: true });
-                                return "Fatto! Se vuoi altre modifiche, dimmelo.";
-                            }
-                        }
-                    }
-                } catch (falError) {
-                    console.error("Anche Fal.ai fallito:", falError);
-                }
-            }
-        }
-        
-        // Se tutti i metodi img2img falliscono, usa text-to-image con prompt dettagliato
-        console.log("⚠️ Tutti i metodi img2img falliti, uso text-to-image con prompt dettagliato");
-    }
-
-    // --- STRADA 2: AVATAR NORMALE (Imagen Text-to-Image) ---
-    let basePrompt = "";
-    
+    // ============================================
+    // CASO 3: AVATAR NORMALE (Imagen)
+    // ============================================
     if (isSelfie) {
-        console.log("📸 STRADA 2: Avatar Normale su Imagen");
+        console.log("📸 >>> CASO 3: Avatar normale con IMAGEN");
         
         const bodyMap: any = { 'Minuta': 'petite', 'Normale': 'normal', 'Sportiva': 'athletic', 'Formoso/a': 'curvy' };
         const bodyEn = bodyMap[config.bodyType] || 'normal';
+        const genderWord = config.gender === 'Donna' ? 'woman' : config.gender === 'Uomo' ? 'man' : 'person';
         
-        basePrompt = `Photorealistic portrait of a ${config.age} year old ${config.gender}, ${config.hairColor} hair, ${config.eyeColor} eyes, ${config.skinTone} skin, ${bodyEn} build. ${config.physicalTraits || ''}.`;
+        const selfiePrompt = `Photorealistic portrait photograph of a ${config.age} year old ${genderWord}. 
+Physical features: ${config.hairColor} hair, ${config.eyeColor} eyes, ${config.skinTone} skin tone, ${bodyEn} body type.
+${config.physicalTraits || ''}
+Scene/pose: ${prompt}.
+Style: professional photography, natural lighting, high quality, 8k resolution.`;
+        
         addTranscript({ sender: 'model', type: 'text', text: `📸 Scatto la foto...`, isComplete: true });
 
-    } else {
-        // Modifica foto utente - fallback a text-to-image con descrizione
-        console.log("🖼️ Fallback: Text-to-Image con descrizione dettagliata");
-        
-        if (!lastUserImageAnalysisRef.current) {
-            return "Non posso modificare la foto perché non l'ho analizzata o non ne hai caricata una di recente.";
+        try {
+            const response = await aiRef.current.models.generateImages({
+                model: IMAGE_MODEL_NAME,
+                prompt: selfiePrompt,
+                config: { numberOfImages: 1, outputMimeType: 'image/jpeg', aspectRatio: '3:4' }
+            });
+
+            const img = response.generatedImages?.[0];
+            if (img?.image?.imageBytes) {
+                const url = `data:image/jpeg;base64,${img.image.imageBytes}`;
+                addTranscript({ sender: 'model', type: 'image', image: url, isComplete: true });
+                return "Eccomi!";
+            }
+            return "La foto è stata bloccata dai filtri. Prova con una richiesta diversa.";
+        } catch (e: any) {
+            console.error("❌ Imagen selfie error:", e);
+            return `Errore: ${e.message}`;
         }
-        
-        basePrompt = `Recreate this specific image exactly: ${lastUserImageAnalysisRef.current}.`;
-        addTranscript({ sender: 'model', type: 'text', text: `🎨 Ricreo la tua foto...`, isComplete: true });
     }
 
-    // Costruzione Prompt Finale per Imagen Text-to-Image
-    const finalImagenPrompt = `${basePrompt} MODIFICATIONS: ${prompt}. Style: 8k, photorealistic, raw photo, natural lighting.`;
+    // ============================================
+    // CASO 4: GENERAZIONE GENERICA (Imagen)
+    // ============================================
+    console.log("🎨 >>> CASO 4: Generazione generica con IMAGEN");
+    
+    addTranscript({ sender: 'model', type: 'text', text: `🎨 Genero l'immagine...`, isComplete: true });
 
     try {
         const response = await aiRef.current.models.generateImages({
             model: IMAGE_MODEL_NAME,
-            prompt: finalImagenPrompt,
+            prompt: `${prompt}. Photorealistic, high quality, 8k resolution, professional photography.`,
             config: { numberOfImages: 1, outputMimeType: 'image/jpeg', aspectRatio: '3:4' }
         });
 
         const img = response.generatedImages?.[0];
         if (img?.image?.imageBytes) {
             const url = `data:image/jpeg;base64,${img.image.imageBytes}`;
-            // Se era una modifica foto utente, aggiorna il riferimento
-            if (!isSelfie && lastUserImageRef.current) {
-                lastUserImageRef.current = url;
-            }
             addTranscript({ sender: 'model', type: 'image', image: url, isComplete: true });
-            return "Fatto.";
+            return "Ecco!";
         }
         return "L'immagine è stata bloccata dai filtri di sicurezza.";
-    } catch (e) {
-        console.error("Errore Imagen", e);
-        return "Errore tecnico durante la generazione.";
+    } catch (e: any) {
+        console.error("❌ Imagen generic error:", e);
+        return `Errore: ${e.message}`;
     }
   };
   const handleSendEmail = (recipient: string, subject: string, body: string) => {
@@ -994,17 +1020,20 @@ const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, 
   const handleSearchContact = (searchName: string): string => {
     const searchLower = searchName.toLowerCase().trim();
     
-    if (contacts.length === 0) {
-      return "RUBRICA_VUOTA: La rubrica è vuota. Chiedi all'utente di aggiungere contatti dalla sidebar.";
+    // USA IL REF per avere sempre il valore aggiornato
+    const currentContacts = contactsRef.current;
+    
+    if (currentContacts.length === 0) {
+      return "RUBRICA_VUOTA: La rubrica è vuota. Chiedi all'utente di aggiungere contatti dalla sidebar cliccando su 'Rubrica'.";
     }
     
     // Cerca corrispondenze
-    const matches = contacts.filter(c => 
+    const matches = currentContacts.filter(c => 
       c.name.toLowerCase().includes(searchLower)
     );
     
     if (matches.length === 0) {
-      return `CONTATTO_NON_TROVATO: Nessun contatto trovato con nome "${searchName}". Contatti disponibili: ${contacts.map(c => c.name).join(', ')}`;
+      return `CONTATTO_NON_TROVATO: Nessun contatto trovato con nome "${searchName}". Contatti disponibili: ${currentContacts.map(c => c.name).join(', ')}`;
     }
     
     if (matches.length === 1) {
@@ -1036,10 +1065,12 @@ const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, 
   const importContactsFromPhone = async () => {
     // Verifica supporto Contact Picker API
     if (!('contacts' in navigator && 'ContactsManager' in window)) {
-      // Fallback: prova con input file per vCard
-      alert('Il tuo browser non supporta l\'importazione diretta dei contatti.\n\nPuoi esportare i contatti dal telefono come file .vcf e importarli manualmente.');
+      alert('📱 Il tuo browser non supporta l\'importazione diretta.\n\n👉 Su iPhone/Safari:\n1. Apri l\'app Contatti\n2. Tocca un contatto > Condividi > Seleziona altri contatti\n3. Salva come file .vcf\n4. Importa qui con "Importa .vcf"');
       return;
     }
+
+    // Mostra istruzioni prima di aprire il picker
+    alert('📱 Si aprirà la rubrica del telefono.\n\n👉 Per selezionare TUTTI i contatti:\n• Tocca il menu (⋮) in alto a destra\n• Seleziona "Seleziona tutto"\n• Conferma la selezione');
 
     try {
       isImportingContactsRef.current = true;
@@ -1066,8 +1097,8 @@ const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, 
           if (phones.length > 0) {
             const phone = phones[0];
             
-            // Verifica se il contatto esiste già
-            const exists = contacts.some(c => 
+            // Verifica se il contatto esiste già (usa ref per valore aggiornato)
+            const exists = contactsRef.current.some(c => 
               c.name.toLowerCase() === name.toLowerCase() || 
               c.phone.replace(/\D/g, '') === phone.replace(/\D/g, '')
             );
@@ -1086,7 +1117,7 @@ const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, 
         
         if (newContacts.length > 0) {
           setContacts(prev => [...prev, ...newContacts]);
-          alert(`✅ Importati ${importedCount} contatti!`);
+          alert(`✅ Importati ${importedCount} contatti!\n\nOra puoi dire "${config.name}, chiama [nome]" per chiamare.`);
         } else {
           alert('Nessun nuovo contatto da importare (potrebbero essere già presenti).');
         }
@@ -1259,9 +1290,12 @@ const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, 
   const handleGetCalendarEvents = async (daysAhead: number = 7): Promise<string> => {
     console.log(`📅 Richiesta calendario per i prossimi ${daysAhead} giorni...`); // DEBUG
 
-    if (!googleCalendarToken) {
-      console.warn("⚠️ Token mancante");
-      return "Il calendario Google non è connesso. Chiedi all'utente di connettere il calendario dalla sidebar.";
+    // USA IL REF per avere sempre il valore aggiornato
+    const token = googleCalendarTokenRef.current;
+    
+    if (!token) {
+      console.warn("⚠️ Token mancante (ref)");
+      return "ERRORE: Il calendario Google non è connesso. Chiedi all'utente di connettere il calendario cliccando sul pulsante nella sidebar.";
     }
     
     try {
@@ -1278,7 +1312,7 @@ const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, 
 
       const response = await fetch(url, {
           headers: {
-            'Authorization': `Bearer ${googleCalendarToken}`
+            'Authorization': `Bearer ${token}`
           }
         }
       );
@@ -1337,9 +1371,12 @@ const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, 
   ): Promise<string> => {
     console.log(`📅 Creazione evento: "${title}" il ${startDatetime}`);
 
-    if (!googleCalendarToken) {
-      console.warn("⚠️ Token mancante");
-      return "Il calendario Google non è connesso. Chiedi all'utente di connettere il calendario dalla sidebar.";
+    // USA IL REF per avere sempre il valore aggiornato
+    const token = googleCalendarTokenRef.current;
+    
+    if (!token) {
+      console.warn("⚠️ Token mancante (ref)");
+      return "ERRORE: Il calendario Google non è connesso. Chiedi all'utente di connettere il calendario cliccando sul pulsante nella sidebar.";
     }
     
     try {
@@ -1413,7 +1450,7 @@ const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, 
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${googleCalendarToken}`,
+            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(eventBody)
@@ -1599,22 +1636,21 @@ CHIAMATE (Telefono, WhatsApp, Telegram):
 - Se l'utente vuole CHIAMARE o TELEFONARE a qualcuno, hai DUE opzioni:
   1. Se l'utente dice solo un NOME (es. "chiama Marco", "telefona a Giulia"), USA PRIMA 'search_contact' per cercare nella rubrica.
   2. Se l'utente fornisce già il numero o la rubrica è vuota, usa direttamente 'make_call'.
-- RUBRICA ATTUALE: ${contacts.length > 0 ? `Contiene ${contacts.length} contatti: ${contacts.map(c => c.name).join(', ')}.` : 'La rubrica è vuota. Se l\'utente vuole chiamare qualcuno per nome, chiedigli di aggiungere contatti dalla sidebar.'}
 - Dopo aver ottenuto il numero con 'search_contact', chiedi con quale app preferisce chiamare (Telefono normale, WhatsApp o Telegram).
 - NON inventare numeri. Usa SOLO quelli restituiti da 'search_contact' o forniti dall'utente.
+- Se 'search_contact' risponde RUBRICA_VUOTA, chiedi all'utente di aggiungere contatti dalla sidebar.
 
 CALENDARIO (Protocollo Rigoroso):
-- STATO ATTUALE: ${googleCalendarToken ? 'Il calendario è CONNESSO e puoi leggere/creare eventi.' : 'Il calendario NON è connesso. Se chiedono eventi, dii di connetterlo dalla sidebar.'}
-- Quando l'utente chiede informazioni su appuntamenti/impegni, DEVI usare lo strumento 'get_calendar_events'.
-- Quando l'utente vuole AGGIUNGERE/CREARE/INSERIRE un evento, DEVI usare lo strumento 'create_calendar_event'.
+- Quando l'utente chiede informazioni su appuntamenti/impegni, DEVI SEMPRE usare lo strumento 'get_calendar_events'.
+- Quando l'utente vuole AGGIUNGERE/CREARE/INSERIRE un evento, DEVI SEMPRE usare lo strumento 'create_calendar_event'.
   * Prima chiedi: titolo dell'evento, data e ora
   * Il formato data deve essere ISO 8601 (es: 2025-01-15T14:00 per le 14:00 del 15 gennaio)
   * Per eventi tutto il giorno usa solo la data (es: 2025-01-15)
   * Opzionalmente chiedi durata, luogo e descrizione
-- NON inventare MAI appuntamenti. Se lo strumento restituisce "Nessun evento", rispondi: "Dal tuo calendario non vedo nulla per i prossimi giorni".
-- Se lo strumento restituisce un errore, dillo: "Non riesco a leggere il calendario in questo momento".
-- Leggi SOLO ed ESCLUSIVAMENTE gli eventi che ti vengono restituiti dallo strumento. Non aggiungere dettagli che non ci sono.
-- Se l'utente chiede "cosa faccio oggi" e il calendario è vuoto, NON dire "magari potresti rilassarti", rispondi prima tecnicamente: "Per oggi non hai nulla segnato."
+- Se lo strumento restituisce "ERRORE: Il calendario Google non è connesso", chiedi all'utente di connetterlo dalla sidebar.
+- NON inventare MAI appuntamenti. Leggi SOLO ciò che restituisce lo strumento.
+- Se lo strumento restituisce "Nessun evento", rispondi: "Dal tuo calendario non vedo nulla per i prossimi giorni".
+- NON presumere mai che il calendario sia connesso o meno. USA SEMPRE lo strumento per verificare.
 
 Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo Personalità.`,
           tools: allTools,
@@ -1632,31 +1668,51 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
             const source = ctx.createMediaStreamSource(stream);
             inputSourceRef.current = source;
             
-            // LATENCY FIX: Usa buffer più piccolo per ridurre latenza base
-            const processor = ctx.createScriptProcessor(2048, 1, 1);
+            // LATENCY FIX V2: Buffer ancora più piccolo
+            const processor = ctx.createScriptProcessor(1024, 1, 1);
             processorRef.current = processor;
             
             // Reset contatori latenza
             lastAudioProcessTimeRef.current = performance.now();
             audioQueueLengthRef.current = 0;
+            let consecutiveSlowFrames = 0;
+            let lastResetTime = performance.now();
             
             processor.onaudioprocess = (e) => {
               const now = performance.now();
               const timeSinceLastProcess = now - lastAudioProcessTimeRef.current;
               
-              // LATENCY FIX: Se sono passati più di 500ms dall'ultimo processo,
-              // significa che c'è accumulo. Salta questo buffer per recuperare.
-              if (timeSinceLastProcess > 500) {
-                console.warn(`⚠️ Audio lag detected: ${timeSinceLastProcess.toFixed(0)}ms - skipping buffer`);
+              // LATENCY FIX V2: Controllo più aggressivo
+              // Se il frame arriva troppo tardi (>200ms), salta
+              if (timeSinceLastProcess > 200) {
+                consecutiveSlowFrames++;
+                console.warn(`⚠️ Slow frame #${consecutiveSlowFrames}: ${timeSinceLastProcess.toFixed(0)}ms`);
+                
+                // Se abbiamo troppi frame lenti consecutivi, reset totale
+                if (consecutiveSlowFrames >= 3) {
+                  console.error(`🔄 Audio reset triggered after ${consecutiveSlowFrames} slow frames`);
+                  audioQueueLengthRef.current = 0;
+                  consecutiveSlowFrames = 0;
+                  lastResetTime = now;
+                }
+                
                 lastAudioProcessTimeRef.current = now;
-                audioQueueLengthRef.current = 0;
                 return; // Salta questo buffer
               }
               
-              // LATENCY FIX: Se la coda è troppo lunga (>5 buffer), salta
+              consecutiveSlowFrames = 0; // Reset se il frame è veloce
+              
+              // LATENCY FIX V2: Reset periodico ogni 30 secondi per prevenire accumulo
+              if (now - lastResetTime > 30000) {
+                console.log('🔄 Periodic audio queue reset');
+                audioQueueLengthRef.current = 0;
+                lastResetTime = now;
+              }
+              
+              // Controllo coda - più aggressivo
               audioQueueLengthRef.current++;
-              if (audioQueueLengthRef.current > 5) {
-                console.warn(`⚠️ Buffer queue overflow: ${audioQueueLengthRef.current} - skipping`);
+              if (audioQueueLengthRef.current > 3) {
+                console.warn(`⚠️ Queue overflow: ${audioQueueLengthRef.current} - clearing`);
                 audioQueueLengthRef.current = 0;
                 lastAudioProcessTimeRef.current = now;
                 return;
@@ -1667,22 +1723,30 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
               const inputData = e.inputBuffer.getChannelData(0);
               
               // Calcola volume per visualizzazione (meno frequente)
-              if (Math.random() > 0.9) {
+              if (Math.random() > 0.95) {
                 let sum = 0;
-                for(let i = 0; i < inputData.length; i += 4) sum += inputData[i] * inputData[i];
-                setAudioVolume(Math.sqrt(sum / (inputData.length / 4)) * 5);
+                for(let i = 0; i < inputData.length; i += 8) sum += inputData[i] * inputData[i];
+                setAudioVolume(Math.sqrt(sum / (inputData.length / 8)) * 5);
               }
               
               if (isMutedRef.current) return;
               
-              // Invia audio al server
-              sessionPromiseRef.current?.then(session => {
+              // Invia audio al server con timeout
+              const sendPromise = sessionPromiseRef.current?.then(session => {
                 session.sendRealtimeInput({ media: createBlob(inputData) });
                 audioQueueLengthRef.current = Math.max(0, audioQueueLengthRef.current - 1);
-              }).catch(err => {
-                console.error('Error sending audio:', err);
-                audioQueueLengthRef.current = 0;
               });
+              
+              // Timeout per evitare blocchi
+              if (sendPromise) {
+                Promise.race([
+                  sendPromise,
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('Send timeout')), 500))
+                ]).catch(err => {
+                  console.warn('Audio send issue:', err.message);
+                  audioQueueLengthRef.current = 0;
+                });
+              }
             };
             
             source.connect(processor);
@@ -3336,8 +3400,8 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
                     <div style={{ fontSize: '12px', fontWeight: 500, color: '#64748b' }}>{t.text}</div>
                     <button 
                       onClick={() => {
-                        // Per mailto: usiamo location.href, per altri link window.open
-                        if (t.actionUrl?.startsWith('mailto:')) {
+                        // Per tel: e mailto: usiamo location.href per compatibilità mobile
+                        if (t.actionUrl?.startsWith('mailto:') || t.actionUrl?.startsWith('tel:')) {
                           window.location.href = t.actionUrl;
                         } else {
                           window.open(t.actionUrl, '_blank', 'noopener,noreferrer');
@@ -3360,7 +3424,7 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
                           : t.actionIcon === 'send'
                             ? 'linear-gradient(135deg, #0088cc, #00a0dc)'
                             : t.actionIcon === 'phone'
-                              ? 'linear-gradient(135deg, #f59e0b, #d97706)'
+                              ? 'linear-gradient(135deg, #22c55e, #16a34a)'
                               : 'linear-gradient(135deg, #10b981, #14b8a6)',
                         boxShadow: '0 4px 16px rgba(0,0,0,0.15)'
                       }}
@@ -3370,7 +3434,7 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column' }}>
                         <span style={{ fontSize: '15px' }}>{t.actionLabel}</span>
-                        <span style={{ fontSize: '10px', opacity: 0.8, fontWeight: 400 }}>Tocca per aprire</span>
+                        <span style={{ fontSize: '10px', opacity: 0.8, fontWeight: 400 }}>Tocca per {t.actionIcon === 'phone' ? 'chiamare' : 'aprire'}</span>
                       </div>
                       <ExternalLink size={16} style={{ marginLeft: 'auto', opacity: 0.8 }} />
                     </button>
