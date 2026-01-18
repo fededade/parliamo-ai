@@ -747,53 +747,120 @@ const handleImageGeneration = async (prompt: string, isSelfie: boolean = false, 
 
     // ============================================
     // CASO 1: MODIFICA FOTO UTENTE (is_edit=true)
-    // USA IMAGEN con descrizione dettagliata
+    // USA FAL.AI image-to-image con strength appropriato
     // ============================================
     if (isEdit) {
-        console.log("🎨 >>> CASO 1: Modifica foto utente con IMAGEN");
+        console.log("🎨 >>> CASO 1: Modifica foto utente con FAL.AI image-to-image");
         
-        if (!lastUserImageAnalysisRef.current) {
+        if (!lastUserImageRef.current) {
             return "Non hai caricato nessuna foto da modificare. Carica prima una foto!";
         }
         
         addTranscript({ sender: 'model', type: 'text', text: `🎨 Modifico la tua foto...`, isComplete: true });
         
-        // Costruisci prompt dettagliato basato sull'analisi + modifiche richieste
-        const imagenPrompt = `Photorealistic image based on this description: ${lastUserImageAnalysisRef.current}
+        if (!falKey) {
+            // Fallback su Imagen text-to-image (risultati peggiori ma funziona)
+            console.log("⚠️ Nessuna chiave fal.ai, fallback su Imagen");
+            try {
+                const imagenPrompt = `${lastUserImageAnalysisRef.current}. 
+IMPORTANT MODIFICATIONS: ${prompt}. 
+Photorealistic, high quality, 8k.`;
+                
+                const response = await aiRef.current.models.generateImages({
+                    model: IMAGE_MODEL_NAME,
+                    prompt: imagenPrompt,
+                    config: { numberOfImages: 1, outputMimeType: 'image/jpeg', aspectRatio: '3:4' }
+                });
 
-IMPORTANT - APPLY THESE MODIFICATIONS: ${prompt}
-
-The final image MUST show these changes: ${prompt}. 
-Style: photorealistic, high quality, natural lighting, 8k resolution.`;
-        
-        console.log("📤 Imagen prompt:", imagenPrompt.substring(0, 300) + "...");
+                const img = response.generatedImages?.[0];
+                if (img?.image?.imageBytes) {
+                    const url = `data:image/jpeg;base64,${img.image.imageBytes}`;
+                    lastUserImageRef.current = url;
+                    addTranscript({ sender: 'model', type: 'image', image: url, isComplete: true });
+                    return "Fatto! (Nota: senza fal.ai configurato, l'identità potrebbe non essere preservata)";
+                }
+                return "L'immagine è stata bloccata dai filtri.";
+            } catch (e: any) {
+                return `Errore: ${e.message}`;
+            }
+        }
 
         try {
-            const response = await aiRef.current.models.generateImages({
-                model: IMAGE_MODEL_NAME,
-                prompt: imagenPrompt,
-                config: { numberOfImages: 1, outputMimeType: 'image/jpeg', aspectRatio: '3:4' }
+            const FAL_URL = 'https://fal.run/fal-ai/flux/dev/image-to-image';
+            
+            // Determina strength in base al tipo di modifica
+            const promptLower = prompt.toLowerCase();
+            const isBackgroundChange = promptLower.includes('sfondo') || 
+                                       promptLower.includes('background') ||
+                                       promptLower.includes('paesaggio') ||
+                                       promptLower.includes('spiaggia') ||
+                                       promptLower.includes('mare') ||
+                                       promptLower.includes('montagna') ||
+                                       promptLower.includes('tramonto') ||
+                                       promptLower.includes('ambiente');
+            
+            // STRENGTH CRITICO:
+            // - Sfondo: 0.4-0.5 (mantiene soggetto, cambia sfondo)
+            // - Soggetto: 0.6-0.7 (permette modifiche significative alla persona)
+            const strength = isBackgroundChange ? 0.45 : 0.65;
+            
+            console.log(`📊 Tipo modifica: ${isBackgroundChange ? 'SFONDO' : 'SOGGETTO'}, strength: ${strength}`);
+            
+            // Prompt chiaro per la modifica
+            const editPrompt = isBackgroundChange 
+                ? `Same person, same pose, same clothes. Change ONLY the background to: ${prompt}. Photorealistic, high quality.`
+                : `${prompt}. Keep the same person identity and pose. Photorealistic, high quality.`;
+            
+            console.log("📤 Fal.ai prompt:", editPrompt);
+            console.log("📤 Strength:", strength);
+            
+            const response = await fetch(FAL_URL, {
+                method: 'POST',
+                headers: { 
+                    'Authorization': `Key ${falKey}`, 
+                    'Content-Type': 'application/json' 
+                },
+                body: JSON.stringify({
+                    prompt: editPrompt,
+                    image_url: lastUserImageRef.current,
+                    strength: strength,  // PARAMETRO CRITICO!
+                    num_inference_steps: 28,
+                    guidance_scale: 7.5,
+                    image_size: "portrait_4_3",
+                    sync_mode: true,
+                    enable_safety_checker: true  // Attivo per contenuti normali
+                })
             });
 
-            const img = response.generatedImages?.[0];
-            if (img?.image?.imageBytes) {
-                const url = `data:image/jpeg;base64,${img.image.imageBytes}`;
-                lastUserImageRef.current = url;
-                // Aggiorna l'analisi per modifiche successive
-                lastUserImageAnalysisRef.current = `${lastUserImageAnalysisRef.current}. Applied changes: ${prompt}`;
-                addTranscript({ sender: 'model', type: 'image', image: url, isComplete: true });
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error("❌ Fal.ai error:", response.status, errorText);
+                throw new Error(`Fal.ai: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            console.log("✅ Fal.ai response received");
+            
+            const imgUrl = data.images?.[0]?.url || data.image?.url;
+            
+            if (imgUrl) {
+                lastUserImageRef.current = imgUrl;
+                lastUserImageAnalysisRef.current = `${lastUserImageAnalysisRef.current}. Modified: ${prompt}`;
+                addTranscript({ sender: 'model', type: 'image', image: imgUrl, isComplete: true });
                 return "Ecco! Se vuoi altre modifiche, dimmelo.";
             }
-            return "L'immagine è stata bloccata dai filtri di sicurezza. Prova con una richiesta diversa.";
+            
+            return "Errore: nessuna immagine generata.";
+            
         } catch (e: any) {
-            console.error("❌ Imagen edit error:", e);
+            console.error("❌ Edit error:", e);
             return `Errore: ${e.message}`;
         }
     }
 
     // ============================================
     // CASO 2: AVATAR UNCENSORED 
-    // USA FAL.AI (unico caso!)
+    // USA FAL.AI con safety_checker DISATTIVATO
     // ============================================
     if (isSelfie && isUncensored) {
         console.log("🔥 >>> CASO 2: Avatar uncensored con FAL.AI");
@@ -842,7 +909,7 @@ Style: intimate boudoir photography, sensual pose, soft romantic lighting, artis
                         guidance_scale: 7.5,
                         image_size: "portrait_4_3",
                         sync_mode: true,
-                        enable_safety_checker: false
+                        enable_safety_checker: false  // DISATTIVATO per uncensored
                     })
                 });
 
@@ -869,7 +936,7 @@ Style: intimate boudoir photography, sensual pose, soft romantic lighting, artis
                     image_size: "portrait_4_3",
                     sync_mode: true,
                     num_images: 1,
-                    enable_safety_checker: false
+                    enable_safety_checker: false  // DISATTIVATO per uncensored
                 })
             });
 
