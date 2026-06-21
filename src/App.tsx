@@ -3,7 +3,7 @@ import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type, To
 import { TranscriptItem, AssistantConfig } from './types';
 import { createBlob, decode, decodeAudioData } from './utils/audio';
 import { AudioVisualizer } from './components/AudioVisualizer';
-import { Mic, MicOff, PhoneOff, User, Bot, Sparkles, Image as ImageIcon, ArrowRight, Loader2, Heart, Info, Mail, MessageCircle, ExternalLink, Download, Wand2, UserCircle, Sliders, Music2, Menu, Camera, Send, Calendar, CalendarCheck, RefreshCw, LogOut, Phone } from 'lucide-react';
+import { Mic, MicOff, PhoneOff, User, Bot, Sparkles, Image as ImageIcon, ArrowRight, Loader2, Heart, Info, Mail, MessageCircle, ExternalLink, Download, Wand2, UserCircle, Sliders, Music2, Menu, Camera, Send, Calendar, CalendarCheck, RefreshCw, LogOut, Phone, X, ChevronUp } from 'lucide-react';
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 import { auth } from './firebase';
 import AuthScreen from './AuthScreen';
@@ -257,6 +257,184 @@ const AppLogo = ({ size = 48, className = "" }: { size?: number, className?: str
           </div>
         )}
       </div>
+    </div>
+  );
+};
+
+// --- MENU A SCOMPARSA: raggruppa tutte le opzioni secondarie sotto un unico pulsante ---
+interface OptionsMenuProps {
+  contactsCount: number;
+  calendarConnected: boolean;
+  calendarExpired: boolean;
+  googleClientId: string;
+  onOpenContacts: () => void;
+  onConnectCalendar: () => void;
+  onDisconnectCalendar: () => void;
+  onNewAssistant: () => void;
+  onLogout: () => void;
+  userEmail?: string;
+}
+
+const OptionsMenu: React.FC<OptionsMenuProps> = ({
+  contactsCount,
+  calendarConnected,
+  calendarExpired,
+  googleClientId,
+  onOpenContacts,
+  onConnectCalendar,
+  onDisconnectCalendar,
+  onNewAssistant,
+  onLogout,
+  userEmail,
+}) => {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+
+  // Chiudi il menu cliccando fuori
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [open]);
+
+  const itemBase: React.CSSProperties = {
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '12px 14px',
+    backgroundColor: 'transparent',
+    border: 'none',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#334155',
+    textAlign: 'left',
+    transition: 'background-color 0.15s',
+  };
+
+  const run = (fn: () => void) => () => { setOpen(false); fn(); };
+
+  return (
+    <div ref={wrapperRef} style={{ position: 'relative', marginTop: '12px' }}>
+      {/* Pulsante principale ben visibile */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '10px',
+          padding: '13px 18px',
+          background: open
+            ? 'linear-gradient(135deg, #7c3aed, #9333ea)'
+            : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+          color: 'white',
+          borderRadius: '14px',
+          fontWeight: 700,
+          fontSize: '14px',
+          border: 'none',
+          cursor: 'pointer',
+          boxShadow: '0 6px 18px rgba(124, 58, 237, 0.25)',
+          transition: 'all 0.2s',
+        }}
+      >
+        {open ? <X size={18} /> : <Menu size={18} />}
+        Menu opzioni
+        <ChevronUp
+          size={16}
+          style={{ marginLeft: 'auto', transition: 'transform 0.2s', transform: open ? 'rotate(0deg)' : 'rotate(180deg)' }}
+        />
+      </button>
+
+      {/* Pannello a scomparsa (si apre verso l'alto) */}
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 'calc(100% + 10px)',
+            left: 0,
+            right: 0,
+            backgroundColor: 'rgba(255,255,255,0.98)',
+            backdropFilter: 'blur(12px)',
+            borderRadius: '16px',
+            border: '1px solid rgba(226,232,240,0.8)',
+            boxShadow: '0 12px 40px rgba(15, 23, 42, 0.18)',
+            padding: '8px',
+            zIndex: 100,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '2px',
+          }}
+        >
+          {/* Rubrica */}
+          <button
+            style={itemBase}
+            onClick={run(onOpenContacts)}
+            onMouseOver={(e) => (e.currentTarget.style.backgroundColor = '#f5f3ff')}
+            onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+          >
+            <Phone size={18} style={{ color: '#6366f1' }} />
+            <span>Rubrica</span>
+            <span style={{ marginLeft: 'auto', fontSize: '12px', fontWeight: 700, color: '#94a3b8' }}>{contactsCount}</span>
+          </button>
+
+          {/* Calendario */}
+          {calendarConnected ? (
+            <button
+              style={itemBase}
+              onClick={run(onDisconnectCalendar)}
+              onMouseOver={(e) => (e.currentTarget.style.backgroundColor = '#f0fdf4')}
+              onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <CalendarCheck size={18} style={{ color: '#22c55e' }} />
+              <span>Calendario connesso</span>
+              <span style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: 600, color: '#94a3b8' }}>Disconnetti</span>
+            </button>
+          ) : (
+            <button
+              style={itemBase}
+              onClick={run(onConnectCalendar)}
+              onMouseOver={(e) => (e.currentTarget.style.backgroundColor = '#f5f3ff')}
+              onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <Calendar size={18} style={{ color: calendarExpired ? '#ef4444' : '#7e22ce' }} />
+              <span>{calendarExpired ? 'Riconnetti Calendar' : (googleClientId ? 'Connetti Google Calendar' : 'Configura Calendar')}</span>
+            </button>
+          )}
+
+          <div style={{ height: '1px', backgroundColor: '#f1f5f9', margin: '4px 8px' }} />
+
+          {/* Nuovo Assistente */}
+          <button
+            style={itemBase}
+            onClick={run(onNewAssistant)}
+            onMouseOver={(e) => (e.currentTarget.style.backgroundColor = '#f8fafc')}
+            onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+          >
+            <RefreshCw size={18} style={{ color: '#64748b' }} />
+            <span>Nuovo Assistente</span>
+          </button>
+
+          {/* Logout */}
+          <button
+            style={{ ...itemBase, color: '#ef4444' }}
+            onClick={run(onLogout)}
+            onMouseOver={(e) => (e.currentTarget.style.backgroundColor = '#fef2f2')}
+            onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+          >
+            <LogOut size={18} style={{ color: '#ef4444' }} />
+            <span>Esci{userEmail ? ` (${userEmail.split('@')[0]})` : ''}</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };
@@ -1642,6 +1820,12 @@ Style: professional photography, natural lighting, high quality, 8k resolution.`
         console.log('📜 Memoria caricata con', transcripts.filter(t => t.type === 'text').slice(-15).length, 'messaggi');
       }
 
+      // --- DATA E ORA CORRENTI: evita che il modello risponda con dati del suo addestramento ---
+      const nowDate = new Date();
+      const todayStr = nowDate.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+      const todayIso = nowDate.toISOString().slice(0, 10);
+      const timeStr = nowDate.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+
       const configLive = {
         model: LIVE_MODEL_NAME,
         generationConfig: {
@@ -1658,14 +1842,21 @@ ${memoryInstruction}
 Sei ${config.name}, confidente di ${config.userName}. 
 Oltre al modulo personalità qui sopra, ecco la tua BIO: ${config.biography}.
 
-RICERCA ONLINE E INFO LOCALI:
-- Hai accesso allo strumento 'googleSearch'.
-- Usalo SUBITO e AUTOMATICAMENTE quando l'utente chiede:
-  1. Informazioni su attività locali (es. "trovami un idraulico a Vigevano", "ristoranti aperti stasera", "farmacia di turno").
-  2. Notizie di attualità o fatti recenti (es. "cosa dice la manovra economica?", "chi ha vinto la partita ieri?").
-  3. Dati specifici o verifiche (es. "prezzo attuale dell'oro", "meteo domani").
-- Quando fornisci risultati locali, cerca di dare nome dell'attività e indirizzo se disponibili.
-- Non dire "non posso navigare in internet", ORA PUOI farlo tramite questo strumento.
+DATA E ORA CORRENTI (IMPORTANTISSIMO):
+- ADESSO è ${todayStr} (${todayIso}), ore ${timeStr}.
+- Questa è la data REALE di oggi. Quando l'utente dice "oggi", "domani", "ieri", "questa settimana", "che giorno è" o "che anno è", usa SEMPRE questa data come riferimento, MAI la data del tuo addestramento.
+- NON dire mai date o anni vecchi pensando siano attuali: il presente è ${todayIso}.
+
+RICERCA ONLINE E INFO AGGIORNATE (REGOLA FERREA):
+- Hai accesso allo strumento 'googleSearch' e PUOI navigare in internet in tempo reale.
+- Le tue conoscenze "a memoria" sono DATATE: per QUALSIASI informazione che può cambiare nel tempo, NON rispondere mai a memoria, usa SEMPRE 'googleSearch' PRIMA di rispondere. Questo vale in particolare per:
+  1. Notizie, attualità, eventi e fatti recenti (es. "cosa è successo oggi?", "chi ha vinto la partita?", "novità sulla manovra economica").
+  2. Attività e servizi locali (es. "un idraulico a Vigevano", "ristoranti aperti stasera", "farmacia di turno", "orari del negozio").
+  3. Dati che variano (meteo, prezzi, cambi valuta, quotazioni, risultati sportivi, classifiche, orari di treni/voli).
+  4. Persone pubbliche, aziende, prodotti, prezzi e versioni recenti.
+- Dopo la ricerca, riporta SOLO i dati trovati online e, se disponibili, nome, indirizzo e fonte.
+- Se non sei sicuro che un'informazione sia ancora valida oggi (${todayIso}), cerca online invece di indovinare.
+- Non dire MAI "non posso navigare in internet" o "i miei dati sono aggiornati solo fino a...": ORA puoi cercare in tempo reale, FALLO.
 
 GESTIONE E MODIFICA IMMAGINI CARICATE:
 1.  **Analisi:** Quando l'utente carica un'immagine, analizzala e commentala brevemente se pertinente al discorso.
@@ -2887,241 +3078,19 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
             </div>
           )}
           
-          {/* Google Calendar Connection - MODIFICATO: SEMPRE VISIBILE */}
-          <div style={{ marginTop: '12px' }}>
-              {googleCalendarToken && isCalendarTokenValid ? (
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '10px 12px',
-                  backgroundColor: '#f0fdf4',
-                  borderRadius: '10px',
-                  border: '1px solid #bbf7d0'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <CalendarCheck size={16} style={{ color: '#22c55e' }} />
-                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#16a34a' }}>Calendario connesso</span>
-                  </div>
-                  <button
-                    onClick={disconnectGoogleCalendar}
-                    style={{
-                      padding: '4px 8px',
-                      fontSize: '9px',
-                      backgroundColor: 'transparent',
-                      color: '#64748b',
-                      border: 'none',
-                      cursor: 'pointer',
-                      textDecoration: 'underline'
-                    }}
-                  >
-                    Disconnetti
-                  </button>
-                </div>
-              ) : googleCalendarToken && isCalendarTokenValid === false ? (
-                <div style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '8px',
-                  padding: '10px 12px',
-                  backgroundColor: '#fef2f2',
-                  borderRadius: '10px',
-                  border: '1px solid #fecaca'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Calendar size={16} style={{ color: '#ef4444' }} />
-                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#dc2626' }}>Sessione scaduta</span>
-                  </div>
-                  <button
-                    onClick={initGoogleCalendar}
-                    style={{
-                      width: '100%',
-                      padding: '8px',
-                      backgroundColor: '#ef4444',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Riconnetti Calendar
-                  </button>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <button
-                    onClick={initGoogleCalendar}
-                    style={{
-                      width: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '10px',
-                      padding: '14px 20px',
-                      backgroundColor: 'white',
-                      color: '#16a34a',
-                      borderRadius: '12px',
-                      border: '1px solid #bbf7d0',
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                      fontWeight: 600,
-                      transition: 'all 0.2s',
-                      boxShadow: '0 2px 8px rgba(34, 197, 94, 0.1)'
-                    }}
-                  >
-                    <Calendar size={18} />
-                    {GOOGLE_CLIENT_ID ? "Connetti Google Calendar" : "Configura Calendar (ID Mancante)"}
-                  </button>
-                  
-                  {/* AVVISO UTENTE */}
-                  <div style={{ 
-                    fontSize: '10px', 
-                    color: '#64748b', 
-                    backgroundColor: 'rgba(255,255,255,0.6)', 
-                    padding: '8px', 
-                    borderRadius: '8px',
-                    border: '1px dashed #cbd5e1'
-                  }}>
-                    <strong>Nota Tecnica:</strong> Se ricevi un errore "Access Blocked" o "403", invia questa email all'amministratore:
-                    <br/>
-                    <code style={{ 
-                      display: 'block', 
-                      marginTop: '4px', 
-                      backgroundColor: '#f1f5f9', 
-                      padding: '4px', 
-                      borderRadius: '4px', 
-                      fontWeight: 'bold',
-                      color: '#0f172a'
-                    }}>
-                      {currentUser?.email || "Email non rilevata"}
-                    </code>
-                  </div>
-                </div>
-              )}
-          </div>
-          
-          {/* RUBRICA CONTATTI */}
-          <div style={{ marginTop: '12px' }}>
-            <button
-              onClick={() => setShowContactsModal(true)}
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '10px',
-                padding: '12px 16px',
-                backgroundColor: 'white',
-                color: '#6366f1',
-                borderRadius: '12px',
-                border: '1px solid #c7d2fe',
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: 600,
-                transition: 'all 0.2s',
-                boxShadow: '0 2px 8px rgba(99, 102, 241, 0.1)'
-              }}
-            >
-              <Phone size={16} />
-              Rubrica ({contacts.length})
-            </button>
-          </div>
-          
-          {/* Pulsante Nuovo Assistente */}
-          <button
-            onClick={() => { 
-              if(window.confirm('Vuoi creare un nuovo assistente? La configurazione attuale verrà cancellata.')) { 
-                resetConfiguration(); 
-              } 
-            }}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              padding: '10px 14px',
-              marginTop: '12px',
-              backgroundColor: 'transparent',
-              color: '#64748b',
-              borderRadius: '10px',
-              border: '1px dashed #cbd5e1',
-              cursor: 'pointer',
-              fontSize: '12px',
-              fontWeight: 500,
-              transition: 'all 0.2s'
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.backgroundColor = '#f1f5f9';
-              e.currentTarget.style.borderColor = '#94a3b8';
-              e.currentTarget.style.color = '#475569';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.backgroundColor = 'transparent';
-              e.currentTarget.style.borderColor = '#cbd5e1';
-              e.currentTarget.style.color = '#64748b';
-            }}
-          >
-            <RefreshCw size={14} />
-            Nuovo Assistente
-          </button>
-          
-          {/* Pulsante Logout */}
-          <button
-            onClick={handleLogout}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              padding: '10px 14px',
-              marginTop: '8px',
-              backgroundColor: 'transparent',
-              color: '#ef4444',
-              borderRadius: '10px',
-              border: '1px dashed #fca5a5',
-              cursor: 'pointer',
-              fontSize: '12px',
-              fontWeight: 500,
-              transition: 'all 0.2s'
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.backgroundColor = '#fef2f2';
-              e.currentTarget.style.borderColor = '#f87171';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.backgroundColor = 'transparent';
-              e.currentTarget.style.borderColor = '#fca5a5';
-            }}
-          >
-            <LogOut size={14} />
-            Esci
-          </button>
-          
-          {/* User info */}
-          {currentUser && (
-            <div style={{
-              marginTop: '12px',
-              padding: '8px 12px',
-              backgroundColor: 'rgba(147, 51, 234, 0.05)',
-              borderRadius: '8px',
-              textAlign: 'center'
-            }}>
-              <p style={{ 
-                fontSize: '10px', 
-                color: '#64748b', 
-                margin: 0,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap'
-              }}>
-                {currentUser.email}
-              </p>
-            </div>
-          )}
+          {/* MENU OPZIONI - raggruppa Rubrica, Calendario, Nuovo Assistente, Esci sotto un unico pulsante */}
+          <OptionsMenu
+            contactsCount={contacts.length}
+            calendarConnected={!!googleCalendarToken && isCalendarTokenValid === true}
+            calendarExpired={!!googleCalendarToken && isCalendarTokenValid === false}
+            googleClientId={GOOGLE_CLIENT_ID}
+            userEmail={currentUser?.email || undefined}
+            onOpenContacts={() => setShowContactsModal(true)}
+            onConnectCalendar={initGoogleCalendar}
+            onDisconnectCalendar={disconnectGoogleCalendar}
+            onNewAssistant={() => { if (window.confirm('Vuoi creare un nuovo assistente? La configurazione attuale verrà cancellata.')) { resetConfiguration(); } }}
+            onLogout={handleLogout}
+          />
           
           {/* Status indicator */}
           <div style={{ 
@@ -3519,172 +3488,22 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
           backdropFilter: 'blur(8px)',
           flexShrink: 0
         }}>
-{/* --- NUOVO BLOCCO CALENDARIO PER MOBILE --- */}
+          {/* --- MENU OPZIONI MOBILE: stesso menu a scomparsa della versione desktop --- */}
           <div className="mobile-calendar-container" style={{ padding: '10px 16px 0 16px' }}>
-              {googleCalendarToken && isCalendarTokenValid ? (
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '8px 12px',
-                  backgroundColor: '#f0fdf4',
-                  borderRadius: '10px',
-                  border: '1px solid #bbf7d0'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <CalendarCheck size={14} style={{ color: '#22c55e' }} />
-                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#16a34a' }}>Calendario connesso</span>
-                  </div>
-                  <button
-                    onClick={disconnectGoogleCalendar}
-                    style={{
-                      padding: '4px 8px',
-                      fontSize: '10px',
-                      backgroundColor: 'transparent',
-                      color: '#64748b',
-                      border: 'none',
-                      cursor: 'pointer',
-                      textDecoration: 'underline'
-                    }}
-                  >
-                    Disconnetti
-                  </button>
-                </div>
-              ) : googleCalendarToken && isCalendarTokenValid === false ? (
-                <div style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '6px',
-                  padding: '8px 12px',
-                  backgroundColor: '#fef2f2',
-                  borderRadius: '10px',
-                  border: '1px solid #fecaca'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Calendar size={14} style={{ color: '#ef4444' }} />
-                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#dc2626' }}>Sessione scaduta</span>
-                  </div>
-                  <button
-                    onClick={initGoogleCalendar}
-                    style={{
-                      width: '100%',
-                      padding: '6px',
-                      backgroundColor: '#ef4444',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      fontSize: '10px',
-                      fontWeight: 600,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Riconnetti
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={initGoogleCalendar}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    padding: '10px 14px',
-                    backgroundColor: '#f3e8ff',
-                    color: '#7e22ce',
-                    borderRadius: '10px',
-                    border: '1px solid #d8b4fe',
-                    cursor: 'pointer',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  <Calendar size={16} />
-                  {GOOGLE_CLIENT_ID ? "Connetti Google Calendar" : "Configura Calendar"}
-                </button>
-              )}
+            <OptionsMenu
+              contactsCount={contacts.length}
+              calendarConnected={!!googleCalendarToken && isCalendarTokenValid === true}
+              calendarExpired={!!googleCalendarToken && isCalendarTokenValid === false}
+              googleClientId={GOOGLE_CLIENT_ID}
+              userEmail={currentUser?.email || undefined}
+              onOpenContacts={() => setShowContactsModal(true)}
+              onConnectCalendar={initGoogleCalendar}
+              onDisconnectCalendar={disconnectGoogleCalendar}
+              onNewAssistant={() => { if (window.confirm('Vuoi creare un nuovo assistente? La configurazione attuale verrà cancellata.')) { resetConfiguration(); } }}
+              onLogout={handleLogout}
+            />
           </div>
-          
-          {/* Pulsante Rubrica Mobile */}
-          <div style={{ padding: '8px 16px 0 16px' }}>
-            <button
-              onClick={() => setShowContactsModal(true)}
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                padding: '10px 14px',
-                backgroundColor: '#eef2ff',
-                color: '#6366f1',
-                borderRadius: '10px',
-                border: '1px solid #c7d2fe',
-                cursor: 'pointer',
-                fontSize: '12px',
-                fontWeight: 600
-              }}
-            >
-              <Phone size={14} />
-              Rubrica ({contacts.length})
-            </button>
-          </div>
-          
-          {/* Pulsante Nuovo Assistente Mobile */}
-          <div style={{ padding: '8px 16px 0 16px' }}>
-            <button
-              onClick={() => { 
-                if(window.confirm('Vuoi creare un nuovo assistente? La configurazione attuale verrà cancellata.')) { 
-                  resetConfiguration(); 
-                } 
-              }}
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                padding: '10px 14px',
-                backgroundColor: 'transparent',
-                color: '#64748b',
-                borderRadius: '10px',
-                border: '1px dashed #cbd5e1',
-                cursor: 'pointer',
-                fontSize: '12px',
-                fontWeight: 500
-              }}
-            >
-              <RefreshCw size={14} />
-              Nuovo Assistente
-            </button>
-            
-            {/* Pulsante Logout Mobile */}
-            <button
-              onClick={handleLogout}
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                padding: '10px 14px',
-                marginTop: '8px',
-                backgroundColor: 'transparent',
-                color: '#ef4444',
-                borderRadius: '10px',
-                border: '1px dashed #fca5a5',
-                cursor: 'pointer',
-                fontSize: '12px',
-                fontWeight: 500
-              }}
-            >
-              <LogOut size={14} />
-              Esci ({currentUser?.email?.split('@')[0]})
-            </button>
-          </div>
-          {/* --- FINE NUOVO BLOCCO --- */}          
+          {/* --- FINE MENU OPZIONI MOBILE --- */}
 	{/* Riga pulsanti */}
           <div style={{
             padding: '12px 16px',
