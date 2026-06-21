@@ -644,17 +644,20 @@ const App: React.FC = () => {
           'https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=1',
           { headers: { 'Authorization': `Bearer ${googleCalendarToken}` } }
         );
-        
+
         if (response.ok) {
           setIsCalendarTokenValid(true);
         } else if (response.status === 401) {
-          console.log('📅 Token calendario scaduto');
-          setGoogleCalendarToken(null);
-          setIsCalendarTokenValid(false);
-          localStorage.removeItem('google_calendar_token');
+          // Token scaduto: NON cancelliamo nulla, proviamo prima il rinnovo silenzioso.
+          // Lo stato resta "valido" finché il rinnovo non fallisce davvero, per evitare
+          // che il calendario appaia "disattivato" durante il rinnovo.
+          console.log('📅 Token calendario scaduto: avvio rinnovo automatico');
+          silentRefreshCalendarToken();
         }
+        // Altri codici di errore: lasciamo lo stato invariato.
       } catch (e) {
-        console.error('Errore verifica token calendario:', e);
+        // Errore di rete temporaneo: NON cambiamo lo stato (evita falsi "disattivato").
+        console.error('Errore verifica token calendario (ignorato):', e);
       }
     };
 
@@ -686,6 +689,10 @@ const App: React.FC = () => {
   const lastAudioProcessTimeRef = useRef<number>(0); // Per tracciare latenza audio
   const audioQueueLengthRef = useRef<number>(0); // Contatore buffer in coda
   const isImportingContactsRef = useRef<boolean>(false); // Flag per import contatti
+  // Google Calendar (GIS): client OAuth, scadenza token e timer di rinnovo
+  const tokenClientRef = useRef<any>(null);
+  const tokenExpiryRef = useRef<number>(0);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     // VERCEL FIX: Defensive API Key retrieval
@@ -1388,148 +1395,190 @@ Style: professional photography, natural lighting, high quality, 8k resolution.`
 
     const reader = new FileReader();
     reader.onload = (e) => {
-      const content = e.target?.result as string;
-      if (!content) return;
+      const raw = e.target?.result as string;
+      if (!raw) return;
+
+      // 1. "Unfolding": le righe vCard spezzate continuano con uno spazio/tab iniziale
+      const content = raw.replace(/\r\n/g, '\n').replace(/\n[ \t]/g, '');
+
+      // Pulisce il valore del telefono: rimuove "tel:" e tiene cifre, +, spazi e separatori
+      const cleanPhone = (val: string) =>
+        val.replace(/^tel:/i, '').replace(/[^+\d\s().\/-]/g, '').trim();
 
       const newContacts: Array<{id: string, name: string, phone: string, telegram?: string}> = [];
-      
-      // Parse semplice del vCard
-      const vCards = content.split('BEGIN:VCARD');
-      
-      for (const vCard of vCards) {
-        if (!vCard.trim()) continue;
-        
+
+      const blocks = content.split(/BEGIN:VCARD/i);
+      for (const block of blocks) {
+        if (!block.trim()) continue;
+
+        const lines = block.split('\n');
         let name = '';
-        let phone = '';
-        
-        // Estrai nome (FN = Full Name)
-        const fnMatch = vCard.match(/FN[;:]([^\r\n]+)/i);
-        if (fnMatch) {
-          name = fnMatch[1].replace(/^[;:]+/, '').trim();
-        }
-        
-        // Fallback su N (Name)
-        if (!name) {
-          const nMatch = vCard.match(/\nN[;:]([^\r\n]+)/i);
-          if (nMatch) {
-            const parts = nMatch[1].split(';');
-            name = parts.filter(p => p.trim()).reverse().join(' ').trim();
+        const phones: string[] = [];
+
+        for (const line of lines) {
+          // Separa "PROPRIETA[;parametri]" dal "valore" al primo ":"
+          const idx = line.indexOf(':');
+          if (idx === -1) continue;
+          const head = line.substring(0, idx).toUpperCase();
+          const value = line.substring(idx + 1).trim();
+          if (!value) continue;
+
+          // Nome completo (gestisce anche prefissi tipo "item1.FN" e parametri "FN;CHARSET=...")
+          if (/(^|\.)FN(;|$)/.test(head)) {
+            if (!name) name = value.replace(/\\,/g, ',').replace(/\\;/g, ';').trim();
+          }
+          // Telefono (gestisce TEL, TEL;TYPE=CELL, item1.TEL;..., valori "tel:+39...", ecc.)
+          else if (/(^|\.)TEL(;|$)/.test(head)) {
+            const p = cleanPhone(value);
+            if (p.replace(/\D/g, '').length >= 5) phones.push(p);
+          }
+          // Fallback su nome strutturato "N" se manca FN (N = Cognome;Nome;...)
+          else if (/(^|\.)N(;|$)/.test(head) && !name) {
+            const parts = value.split(';').map(s => s.trim()).filter(Boolean);
+            name = [parts[1], parts[0]].filter(Boolean).join(' ').trim() || parts.join(' ');
           }
         }
-        
-        // Estrai telefono
-        const telMatch = vCard.match(/TEL[;:\w]*:([+\d\s\-()]+)/i);
-        if (telMatch) {
-          phone = telMatch[1].trim();
-        }
-        
-        if (name && phone) {
-          // Verifica duplicati
-          const exists = contacts.some(c => 
-            c.name.toLowerCase() === name.toLowerCase() || 
-            c.phone.replace(/\D/g, '') === phone.replace(/\D/g, '')
-          );
-          
-          if (!exists && !newContacts.some(c => c.phone.replace(/\D/g, '') === phone.replace(/\D/g, ''))) {
+
+        if (!name) name = 'Senza nome';
+
+        for (const phone of phones) {
+          const digits = phone.replace(/\D/g, '');
+          const existsInState = contactsRef.current.some(c => c.phone.replace(/\D/g, '') === digits);
+          const existsInBatch = newContacts.some(c => c.phone.replace(/\D/g, '') === digits);
+          if (!existsInState && !existsInBatch) {
             newContacts.push({
               id: Date.now().toString() + Math.random().toString(36),
               name,
               phone,
-              telegram: undefined
+              telegram: undefined,
             });
           }
         }
       }
-      
+
       if (newContacts.length > 0) {
         setContacts(prev => [...prev, ...newContacts]);
         alert(`✅ Importati ${newContacts.length} contatti dal file!`);
       } else {
-        alert('Nessun nuovo contatto trovato nel file.');
+        alert('Nessun numero di telefono trovato nel file. Assicurati che i contatti esportati includano un numero di telefono.');
       }
     };
-    
+
     reader.readAsText(file);
     event.target.value = ''; // Reset input
   };
 
-  // --- GOOGLE CALENDAR FUNCTIONS ---
+  // --- GOOGLE CALENDAR (Google Identity Services + rinnovo automatico del token) ---
+
+  // Programma il rinnovo silenzioso ~5 minuti prima della scadenza del token
+  function scheduleCalendarRefresh(expiryMs: number) {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    const refreshInMs = Math.max(expiryMs - Date.now() - 5 * 60 * 1000, 15 * 1000);
+    refreshTimerRef.current = setTimeout(() => {
+      silentRefreshCalendarToken();
+    }, refreshInMs);
+  }
+
+  // Applica un nuovo token: aggiorna stato, salva ed avvia il prossimo rinnovo
+  function applyCalendarToken(token: string, expiresInSec: number) {
+    const expiryMs = Date.now() + (expiresInSec > 0 ? expiresInSec : 3600) * 1000;
+    tokenExpiryRef.current = expiryMs;
+    setGoogleCalendarToken(token);
+    setIsCalendarTokenValid(true);
+    localStorage.setItem('google_calendar_token', token);
+    localStorage.setItem('google_calendar_token_expiry', String(expiryMs));
+    scheduleCalendarRefresh(expiryMs);
+  }
+
+  // Inizializza (una sola volta) il token client di Google Identity Services
+  function ensureTokenClient(): any {
+    if (tokenClientRef.current) return tokenClientRef.current;
+    const oauth2 = (window as any).google?.accounts?.oauth2;
+    if (!oauth2 || !GOOGLE_CLIENT_ID) return null;
+    tokenClientRef.current = oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: 'https://www.googleapis.com/auth/calendar',
+      callback: (resp: any) => {
+        if (resp && resp.access_token) {
+          applyCalendarToken(resp.access_token, Number(resp.expires_in) || 3600);
+        } else if (resp && resp.error) {
+          // Rinnovo silenzioso non riuscito: serve un nuovo consenso dell'utente
+          console.warn('Google Calendar: token non ottenuto', resp.error);
+          setIsCalendarTokenValid(false);
+        }
+      },
+    });
+    return tokenClientRef.current;
+  }
+
+  // Rinnovo silenzioso: non mostra popup se la sessione Google è ancora attiva
+  function silentRefreshCalendarToken() {
+    const client = ensureTokenClient();
+    if (!client) return;
+    try {
+      client.requestAccessToken({ prompt: '' });
+    } catch (e) {
+      console.warn('Errore rinnovo token calendario:', e);
+      setIsCalendarTokenValid(false);
+    }
+  }
+
+  // Connessione interattiva (mostra la schermata di consenso Google)
   const initGoogleCalendar = () => {
     if (!GOOGLE_CLIENT_ID) {
-      console.log('Google Calendar Client ID non configurato');
-      // ...gestione errore (puoi lasciare il codice esistente per l'errore)...
+      setError("Google Calendar non è configurato (manca il Client ID).");
       return;
     }
-    
-    const redirectUri = window.location.origin;
-    const scope = 'https://www.googleapis.com/auth/calendar';
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-      `client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}` +
-      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-      `&response_type=token` +
-      `&scope=${encodeURIComponent(scope)}` +
-      `&prompt=consent`;
-    
-    // 1. Aggiungi il listener per il messaggio PRIMA di aprire il popup
-    const handleAuthMessage = (event: MessageEvent) => {
-      // Verifica sicurezza: accetta messaggi solo dalla nostra stessa origine
-      if (event.origin !== window.location.origin) return;
-      
-      if (event.data && event.data.type === 'GOOGLE_AUTH_SUCCESS') {
-        const token = event.data.token;
-        console.log("📩 Token ricevuto dal popup!", token);
-        
-        setGoogleCalendarToken(token);
-        localStorage.setItem('google_calendar_token', token);
-        
-        // Rimuovi il listener una volta fatto
-        window.removeEventListener('message', handleAuthMessage);
-      }
-    };
-
-    window.addEventListener('message', handleAuthMessage);
-
-    // 2. Apri il popup
-    const popup = window.open(authUrl, 'google-auth', 'width=500,height=600');
-    
-    if (!popup) {
-        setError("Il browser ha bloccato il popup. Per favore consenti i popup.");
-        window.removeEventListener('message', handleAuthMessage); // Pulisci se fallisce
-        return;
+    const client = ensureTokenClient();
+    if (!client) {
+      setError("Servizio Google non ancora pronto, riprova tra qualche secondo.");
+      return;
+    }
+    try {
+      // Se abbiamo già un token valido proviamo il rinnovo silenzioso, altrimenti chiediamo il consenso
+      const hasValidToken = !!googleCalendarTokenRef.current && tokenExpiryRef.current > Date.now();
+      client.requestAccessToken({ prompt: hasValidToken ? '' : 'consent' });
+    } catch (e) {
+      console.error('Errore connessione Google Calendar:', e);
+      setError("Impossibile avviare la connessione a Google Calendar.");
     }
   };
 
- // Controlla se c'è un token salvato o nell'URL al caricamento
+  // Al caricamento: ripristina il token salvato e prepara il rinnovo automatico
   useEffect(() => {
-    // 1. Controlla localStorage
     const savedToken = localStorage.getItem('google_calendar_token');
+    const savedExpiry = Number(localStorage.getItem('google_calendar_token_expiry') || '0');
+    const stillValid = !!savedToken && savedExpiry > Date.now() + 60 * 1000;
+
     if (savedToken) {
+      tokenExpiryRef.current = savedExpiry;
       setGoogleCalendarToken(savedToken);
+      // Stato ottimistico: se il token non è ancora scaduto lo consideriamo valido
+      setIsCalendarTokenValid(stillValid);
     }
-    
-    // 2. Controlla se siamo tornati dall'OAuth (token nell'URL)
-    if (window.location.hash.includes('access_token')) {
-      const hash = window.location.hash.substring(1);
-      const params = new URLSearchParams(hash);
-      const accessToken = params.get('access_token');
-      
-      if (accessToken) {
-        // --- LOGICA POPUP: Se siamo in una finestra aperta da un'altra ---
-        if (window.opener) {
-          console.log("📤 Invio token alla finestra principale e chiudo il popup...");
-          // Invia il token alla finestra genitore
-          window.opener.postMessage({ type: 'GOOGLE_AUTH_SUCCESS', token: accessToken }, window.location.origin);
-          // Chiudi questa finestra popup
-          window.close();
-        } else {
-          // --- LOGICA NORMALE: Se non siamo in un popup ---
-          setGoogleCalendarToken(accessToken);
-          localStorage.setItem('google_calendar_token', accessToken);
-          // Pulisci l'URL
-          window.history.replaceState({}, document.title, window.location.pathname);
+
+    // Attendi che lo script Google Identity Services sia pronto, poi inizializza
+    let attempts = 0;
+    const gsiInterval = setInterval(() => {
+      attempts++;
+      if ((window as any).google?.accounts?.oauth2) {
+        clearInterval(gsiInterval);
+        ensureTokenClient();
+        if (stillValid) {
+          scheduleCalendarRefresh(savedExpiry);
+        } else if (savedToken) {
+          // Token scaduto: tenta un rinnovo silenzioso senza disturbare l'utente
+          silentRefreshCalendarToken();
         }
+      } else if (attempts > 40) { // ~20 secondi
+        clearInterval(gsiInterval);
       }
-    }
+    }, 500);
+
+    return () => {
+      clearInterval(gsiInterval);
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    };
   }, []);
 
   const handleGetCalendarEvents = async (daysAhead: number = 7): Promise<string> => {
@@ -1565,9 +1614,10 @@ Style: professional photography, natural lighting, high quality, 8k resolution.`
       if (!response.ok) {
         console.error("❌ Errore API Google:", response.status, response.statusText); // DEBUG
         if (response.status === 401) {
-          setGoogleCalendarToken(null);
-          localStorage.removeItem('google_calendar_token');
-          return "Il token di accesso è scaduto. Devi riconnettere il calendario.";
+          // Token scaduto: avvia il rinnovo automatico e chiedi di riprovare tra un istante
+          setIsCalendarTokenValid(false);
+          silentRefreshCalendarToken();
+          return "La connessione al calendario si sta rinnovando. Riprova tra un secondo, per favore.";
         }
         return `Errore tecnico nella lettura del calendario (Codice ${response.status}).`;
       }
@@ -1707,9 +1757,10 @@ Style: professional photography, natural lighting, high quality, 8k resolution.`
         console.error("❌ Errore API Google:", response.status, errorData);
         
         if (response.status === 401) {
-          setGoogleCalendarToken(null);
-          localStorage.removeItem('google_calendar_token');
-          return "Il token di accesso è scaduto. Devi riconnettere il calendario.";
+          // Token scaduto: avvia il rinnovo automatico e chiedi di riprovare tra un istante
+          setIsCalendarTokenValid(false);
+          silentRefreshCalendarToken();
+          return "La connessione al calendario si sta rinnovando. Riprova tra un secondo, per favore.";
         }
         return `Errore nella creazione dell'evento: ${errorData.error?.message || response.statusText}`;
       }
@@ -1738,8 +1789,18 @@ Style: professional photography, natural lighting, high quality, 8k resolution.`
   };
 
   const disconnectGoogleCalendar = () => {
+    // Ferma il rinnovo automatico
+    if (refreshTimerRef.current) { clearTimeout(refreshTimerRef.current); refreshTimerRef.current = null; }
+    // Revoca il token presso Google, se possibile
+    const token = googleCalendarTokenRef.current;
+    const revoke = (window as any).google?.accounts?.oauth2?.revoke;
+    if (token && revoke) { try { revoke(token, () => {}); } catch (e) { /* ignora */ } }
+    // Pulisci stato e storage
     setGoogleCalendarToken(null);
+    setIsCalendarTokenValid(false);
+    tokenExpiryRef.current = 0;
     localStorage.removeItem('google_calendar_token');
+    localStorage.removeItem('google_calendar_token_expiry');
   };
 
   const connect = async () => {
