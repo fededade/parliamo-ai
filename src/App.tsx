@@ -595,13 +595,27 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // --- MEMORIA: Salva la storia ogni volta che cambia ---
+  // --- MEMORIA: Salva la storia (in modo efficiente) ---
   useEffect(() => {
-    // Salviamo solo gli ultimi 50 messaggi per non riempire la memoria del browser
-    if (transcripts.length > 0) {
-      const historyToSave = transcripts.slice(-50); 
-      localStorage.setItem('ti_ascolto_chat_history', JSON.stringify(historyToSave));
-    }
+    if (transcripts.length === 0) return;
+    // (1) DEBOUNCE: non salviamo a ogni parola trascritta (decine di volte al secondo),
+    // ma al massimo dopo ~1.5s di pausa. Evita di intasare il thread principale.
+    const timer = setTimeout(() => {
+      try {
+        // (2) Non persistiamo le foto in base64 (pesantissime, rischiano di saturare
+        // localStorage): le sostituiamo con un segnaposto. Restano comunque visibili
+        // nella sessione corrente; la memoria testuale della conversazione resta intatta.
+        const historyToSave = transcripts.slice(-50).map(t =>
+          t.type === 'image'
+            ? { ...t, type: 'text' as const, image: undefined, text: '📷 (foto condivisa)' }
+            : t
+        );
+        localStorage.setItem('ti_ascolto_chat_history', JSON.stringify(historyToSave));
+      } catch (e) {
+        console.warn('Salvataggio cronologia non riuscito:', e);
+      }
+    }, 1500);
+    return () => clearTimeout(timer);
   }, [transcripts]);
 
   // --- RUBRICA: Carica contatti da localStorage ---
