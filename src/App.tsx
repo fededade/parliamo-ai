@@ -1322,7 +1322,7 @@ Style: professional photography, natural lighting, high quality, 8k resolution.`
     }
 
     // Mostra istruzioni prima di aprire il picker
-    alert('📱 Si aprirà la rubrica del telefono.\n\n👉 Per selezionare TUTTI i contatti:\n• Tocca il menu (⋮) in alto a destra\n• Seleziona "Seleziona tutto"\n• Conferma la selezione');
+    alert('📱 Si aprirà la rubrica del browser.\n\n⚠️ Per motivi di privacy il browser NON permette di selezionare tutti i contatti con un solo tocco: dovrai toccarli a uno a uno.\n\n👉 Per importare TUTTA la rubrica in una volta sola, chiudi questa finestra e usa invece il pulsante "Importa TUTTI i contatti (file)".');
 
     try {
       isImportingContactsRef.current = true;
@@ -3723,24 +3723,72 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
               📒 Rubrica Contatti
             </h3>
             
-            {/* Pulsanti Importazione */}
-            <div style={{ 
-              display: 'flex', 
-              gap: '8px', 
+            {/* Importazione contatti */}
+            <div style={{
               marginBottom: '16px',
-              padding: '12px',
+              padding: '14px',
               backgroundColor: '#eef2ff',
-              borderRadius: '10px',
+              borderRadius: '12px',
               border: '1px solid #c7d2fe'
             }}>
+              {/* AZIONE PRINCIPALE: importa tutta la rubrica in una volta tramite file */}
+              <label style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                padding: '14px',
+                backgroundColor: '#6366f1',
+                color: 'white',
+                border: 'none',
+                borderRadius: '10px',
+                fontSize: '14px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                boxShadow: '0 4px 12px rgba(99, 102, 241, 0.25)'
+              }}>
+                <Download size={18} />
+                Importa TUTTI i contatti (file)
+                <input
+                  type="file"
+                  accept=".vcf,.vcard"
+                  onChange={handleVcfImport}
+                  style={{ display: 'none' }}
+                />
+              </label>
+
+              {/* Istruzioni passo-passo per esportare l'intera rubrica */}
+              <details style={{ marginTop: '12px' }}>
+                <summary style={{ fontSize: '12px', fontWeight: 700, color: '#4338ca', cursor: 'pointer' }}>
+                  Come esporto tutta la rubrica? (1 minuto)
+                </summary>
+                <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6, marginTop: '8px' }}>
+                  <p style={{ margin: '0 0 8px 0', fontWeight: 700, color: '#1e293b' }}>📱 iPhone</p>
+                  <p style={{ margin: '0 0 10px 0' }}>
+                    Apri <strong>Contatti</strong> → tocca <strong>Liste</strong> in alto a sinistra → tieni premuto su
+                    "Tutti i contatti" → <strong>Esporta</strong> (oppure usa l'app Rubrica Google/iCloud per esportare
+                    in <strong>.vcf</strong>). Salva il file, poi tocca il pulsante qui sopra e selezionalo.
+                  </p>
+                  <p style={{ margin: '0 0 8px 0', fontWeight: 700, color: '#1e293b' }}>🤖 Android</p>
+                  <p style={{ margin: 0 }}>
+                    Apri l'app <strong>Contatti</strong> → menu/Impostazioni → <strong>Esporta</strong> →
+                    "Esporta in file .vcf". Salva il file, poi tocca il pulsante qui sopra e selezionalo.
+                  </p>
+                </div>
+              </details>
+
+              {/* OPZIONE SECONDARIA: scelta manuale dalla rubrica del browser */}
               <button
                 onClick={importContactsFromPhone}
                 style={{
-                  flex: 1,
-                  padding: '10px 8px',
-                  backgroundColor: '#6366f1',
-                  color: 'white',
-                  border: 'none',
+                  width: '100%',
+                  marginTop: '12px',
+                  padding: '10px',
+                  backgroundColor: 'transparent',
+                  color: '#6366f1',
+                  border: '1px dashed #a5b4fc',
                   borderRadius: '8px',
                   fontSize: '12px',
                   fontWeight: 600,
@@ -3752,44 +3800,13 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
                 }}
               >
                 <Phone size={14} />
-                Importa dal Telefono
+                Oppure scegli alcuni contatti a mano
               </button>
-              
-              <label style={{
-                flex: 1,
-                padding: '10px 8px',
-                backgroundColor: 'white',
-                color: '#6366f1',
-                border: '1px solid #c7d2fe',
-                borderRadius: '8px',
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px'
-              }}>
-                <Download size={14} />
-                Importa .vcf
-                <input
-                  type="file"
-                  accept=".vcf,.vcard"
-                  onChange={handleVcfImport}
-                  style={{ display: 'none' }}
-                />
-              </label>
+              <p style={{ fontSize: '10px', color: '#64748b', margin: '6px 0 0 0', textAlign: 'center' }}>
+                (il browser non consente di selezionarli tutti insieme)
+              </p>
             </div>
-            
-            <p style={{ 
-              fontSize: '10px', 
-              color: '#64748b', 
-              margin: '0 0 16px 0',
-              textAlign: 'center'
-            }}>
-              💡 Su Android/Chrome puoi importare direttamente. Su iOS/Safari esporta i contatti come file .vcf
-            </p>
-            
+
             {/* Form per aggiungere contatto */}
             <form onSubmit={(e) => {
               e.preventDefault();
