@@ -725,19 +725,34 @@ const App: React.FC = () => {
 
   const addTranscript = useCallback((item: Partial<TranscriptItem>) => {
     setTranscripts(prev => {
-      if (item.type === 'text' && item.isComplete === false) {
-          const last = prev[prev.length - 1];
-          if (last && last.sender === item.sender && last.type === 'text' && !last.isComplete) {
+      // Per i messaggi di testo (sia "in corso" che "completati"): se esiste già una
+      // bolla NON completata dello stesso mittente, la aggiorniamo/chiudiamo in place
+      // invece di crearne una nuova. Questo evita il raddoppio della frase a fine turno
+      // mantenendo intatto lo streaming parola-per-parola.
+      if (item.type === 'text') {
+        for (let i = prev.length - 1; i >= 0; i--) {
+          const candidate = prev[i];
+          if (candidate.sender === item.sender && candidate.type === 'text' && !candidate.isComplete) {
             const updated = [...prev];
-            updated[updated.length - 1] = { ...last, text: item.text, isComplete: false };
+            updated[i] = {
+              ...candidate,
+              text: item.text ?? candidate.text,
+              isComplete: item.isComplete ?? false,
+            };
             return updated;
           }
+          // Se incontriamo una bolla già completata dello stesso mittente ci fermiamo:
+          // la frase incompleta da chiudere, se esiste, è più recente di questa.
+          if (candidate.sender === item.sender && candidate.type === 'text' && candidate.isComplete) {
+            break;
+          }
+        }
       }
-      return [...prev, { 
-          id: Date.now().toString() + Math.random().toString(), 
-          sender: item.sender || 'model', 
-          type: item.type || 'text', 
-          text: item.text || '', 
+      return [...prev, {
+          id: Date.now().toString() + Math.random().toString(),
+          sender: item.sender || 'model',
+          type: item.type || 'text',
+          text: item.text || '',
           image: item.image,
           isComplete: item.isComplete || false,
           actionUrl: item.actionUrl,
