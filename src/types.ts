@@ -5,6 +5,7 @@ export interface TranscriptItem {
   text?: string;
   image?: string;
   isComplete: boolean;
+  keep?: boolean; // se true, l'immagine viene conservata anche dopo il riavvio
   actionUrl?: string;
   actionLabel?: string;
   actionIcon?: string;

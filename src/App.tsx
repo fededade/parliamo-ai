@@ -3,7 +3,7 @@ import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type, To
 import { TranscriptItem, AssistantConfig } from './types';
 import { createBlob, decode, decodeAudioData } from './utils/audio';
 import { AudioVisualizer } from './components/AudioVisualizer';
-import { Mic, MicOff, PhoneOff, User, Bot, Sparkles, Image as ImageIcon, ArrowRight, Loader2, Heart, Info, Mail, MessageCircle, ExternalLink, Download, Wand2, UserCircle, Sliders, Music2, Menu, Camera, Send, Calendar, CalendarCheck, RefreshCw, LogOut, Phone, X, ChevronUp } from 'lucide-react';
+import { Mic, MicOff, PhoneOff, User, Bot, Sparkles, Image as ImageIcon, ArrowRight, Loader2, Heart, Info, Mail, MessageCircle, ExternalLink, Download, Wand2, UserCircle, Sliders, Music2, Menu, Camera, Send, Calendar, CalendarCheck, RefreshCw, LogOut, Phone, X, ChevronUp, Bookmark, BookmarkCheck } from 'lucide-react';
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 import { auth } from './firebase';
 import AuthScreen from './AuthScreen';
@@ -601,18 +601,27 @@ const App: React.FC = () => {
     // (1) DEBOUNCE: non salviamo a ogni parola trascritta (decine di volte al secondo),
     // ma al massimo dopo ~1.5s di pausa. Evita di intasare il thread principale.
     const timer = setTimeout(() => {
-      try {
-        // (2) Non persistiamo le foto in base64 (pesantissime, rischiano di saturare
-        // localStorage): le sostituiamo con un segnaposto. Restano comunque visibili
-        // nella sessione corrente; la memoria testuale della conversazione resta intatta.
-        const historyToSave = transcripts.slice(-50).map(t =>
-          t.type === 'image'
+      // (2) Non persistiamo le foto in base64 di default (pesantissime): le sostituiamo
+      // con un segnaposto. ECCEZIONE: le foto che l'utente ha scelto di conservare
+      // (keep === true) vengono salvate per intero, così sopravvivono al riavvio.
+      // La memoria testuale della conversazione resta sempre intatta.
+      const stripImages = (keepFlagged: boolean) =>
+        transcripts.slice(-50).map(t =>
+          t.type === 'image' && !(keepFlagged && t.keep)
             ? { ...t, type: 'text' as const, image: undefined, text: '📷 (foto condivisa)' }
             : t
         );
-        localStorage.setItem('ti_ascolto_chat_history', JSON.stringify(historyToSave));
+      try {
+        localStorage.setItem('ti_ascolto_chat_history', JSON.stringify(stripImages(true)));
       } catch (e) {
-        console.warn('Salvataggio cronologia non riuscito:', e);
+        // Memoria del browser piena: riproviamo senza nessuna immagine, così almeno
+        // il testo della conversazione viene salvato comunque.
+        console.warn('Memoria piena: salvo la cronologia senza immagini.', e);
+        try {
+          localStorage.setItem('ti_ascolto_chat_history', JSON.stringify(stripImages(false)));
+        } catch (e2) {
+          console.warn('Salvataggio cronologia non riuscito:', e2);
+        }
       }
     }, 1500);
     return () => clearTimeout(timer);
@@ -783,6 +792,11 @@ const App: React.FC = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // Conserva/non conserva una foto nella cronologia (sopravvive al riavvio)
+  const toggleKeepImage = (id: string) => {
+    setTranscripts(prev => prev.map(t => t.id === id ? { ...t, keep: !t.keep } : t));
   };
 
   // Funzione per gestire l'upload di foto da parte dell'utente
@@ -3496,27 +3510,66 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
                         display: 'block'
                       }} 
                     />
-                    <button 
-                      onClick={() => t.image && downloadImage(t.image, `foto-${t.sender === 'user' ? config.userName : config.name}-${Date.now()}.png`)}
-                      style={{
+                    {/* Etichetta "conservata" quando la foto viene mantenuta dopo il riavvio */}
+                    {t.keep && (
+                      <div style={{
                         position: 'absolute',
-                        bottom: '8px',
-                        right: '8px',
-                        padding: '8px',
-                        backgroundColor: 'white',
-                        color: '#1e293b',
-                        borderRadius: '50%',
-                        border: 'none',
-                        cursor: 'pointer',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                        top: '8px',
+                        left: '8px',
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center'
-                      }}
-                      title="Scarica immagine"
-                    >
-                      <Download size={14} />
-                    </button>
+                        gap: '4px',
+                        padding: '4px 8px',
+                        backgroundColor: 'rgba(147, 51, 234, 0.92)',
+                        color: 'white',
+                        borderRadius: '999px',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+                      }}>
+                        <BookmarkCheck size={12} /> Conservata
+                      </div>
+                    )}
+                    <div style={{ position: 'absolute', bottom: '8px', right: '8px', display: 'flex', gap: '8px' }}>
+                      {/* Conserva: mantiene questa foto anche dopo il riavvio */}
+                      <button
+                        onClick={() => toggleKeepImage(t.id)}
+                        style={{
+                          padding: '8px',
+                          backgroundColor: t.keep ? '#9333ea' : 'white',
+                          color: t.keep ? 'white' : '#1e293b',
+                          borderRadius: '50%',
+                          border: 'none',
+                          cursor: 'pointer',
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                        title={t.keep ? 'Foto conservata (tocca per non conservarla più)' : 'Conserva questa foto (resterà dopo il riavvio)'}
+                      >
+                        {t.keep ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}
+                      </button>
+                      {/* Scarica sul dispositivo */}
+                      <button
+                        onClick={() => t.image && downloadImage(t.image, `foto-${t.sender === 'user' ? config.userName : config.name}-${Date.now()}.png`)}
+                        style={{
+                          padding: '8px',
+                          backgroundColor: 'white',
+                          color: '#1e293b',
+                          borderRadius: '50%',
+                          border: 'none',
+                          cursor: 'pointer',
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                        title="Scarica immagine sul dispositivo"
+                      >
+                        <Download size={14} />
+                      </button>
+                    </div>
                   </div>
                 )}
 
