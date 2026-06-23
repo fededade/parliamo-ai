@@ -106,7 +106,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: 'linear-gradient(135deg, #fdf4ff 0%, #faf5ff 25%, #f5f3ff 50%, #eff6ff 75%, #f0fdfa 100%)',
+      background: "radial-gradient(1100px 600px at 8% -5%, rgba(167,139,250,0.22), transparent 60%), radial-gradient(1000px 650px at 105% 105%, rgba(249,168,212,0.22), transparent 55%), linear-gradient(135deg, #FFF7FB 0%, #F6F1FF 45%, #FDF2F8 100%)",
       padding: '20px'
     }}>
       <div style={{
@@ -405,9 +405,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
               fontSize: '15px',
               fontWeight: 700,
               color: 'white',
-              background: loading 
-                ? '#a1a1aa' 
-                : 'linear-gradient(135deg, #9333ea 0%, #7c3aed 100%)',
+              background: loading
+                ? '#a1a1aa'
+                : 'linear-gradient(135deg, #A78BFA 0%, #C084FC 50%, #F9A8D4 100%)',
               border: 'none',
               borderRadius: '12px',
               cursor: loading ? 'not-allowed' : 'pointer',

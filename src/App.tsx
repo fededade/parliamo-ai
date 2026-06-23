@@ -12,6 +12,13 @@ const LIVE_MODEL_NAME = 'gemini-2.5-flash-native-audio-preview-09-2025';
 const IMAGE_MODEL_NAME = 'imagen-4.0-generate-001';
 const TEXT_MODEL_NAME = 'gemini-2.0-flash';
 
+// --- TEMA "SOFT GLOW" (caldo, vetro smerigliato) ---
+const SOFT_GLOW_BG = "radial-gradient(1100px 600px at 8% -5%, rgba(167,139,250,0.22), transparent 60%), radial-gradient(1000px 650px at 105% 105%, rgba(249,168,212,0.22), transparent 55%), linear-gradient(135deg, #FFF7FB 0%, #F6F1FF 45%, #FDF2F8 100%)";
+const SOFT_GLASS = 'rgba(255, 251, 254, 0.72)'; // superficie card in vetro smerigliato
+const SOFT_TEXT = '#2E1065'; // testo principale (viola profondo)
+const SOFT_ACCENT = '#9333EA'; // accento viola
+const SOFT_PRIMARY_GRADIENT = 'linear-gradient(135deg, #A78BFA 0%, #C084FC 50%, #F9A8D4 100%)'; // pulsanti principali
+
 // --- PERSONALITY MODULES ---
 const PERSONALITY_PROMPTS: Record<string, { prompt: string; temp: number }> = {
   'Empatico': {
@@ -2267,14 +2274,11 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
     return (
         <div style={{
           minHeight: '100vh',
-          backgroundImage: "url('/background.png')",
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
-          backgroundColor: '#f8fafc',
+          background: SOFT_GLOW_BG,
+          backgroundAttachment: 'fixed',
           position: 'relative',
           fontFamily: 'Outfit, sans-serif',
-          color: '#1e293b'
+          color: SOFT_TEXT
         }}>
             {/* CSS Animation for pulsing heart + Mobile Responsive */}
             <style>{`
@@ -2854,11 +2858,11 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
                             justifyContent: 'center',
                             gap: '16px',
                             padding: '20px 24px',
-                            borderRadius: '16px',
-                            backgroundColor: isFormComplete ? '#9333ea' : '#e2e8f0',
+                            borderRadius: '18px',
+                            background: isFormComplete ? SOFT_PRIMARY_GRADIENT : '#e9e4f0',
                             border: 'none',
                             transition: 'all 0.3s ease',
-                            boxShadow: isFormComplete ? '0 8px 24px rgba(147, 51, 234, 0.3)' : 'none',
+                            boxShadow: isFormComplete ? '0 10px 26px rgba(167, 139, 250, 0.45)' : 'none',
                             cursor: isFormComplete && !isGeneratingProfile ? 'pointer' : 'not-allowed',
                             outline: 'none',
                             marginTop: '8px'
@@ -2907,13 +2911,10 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
       flexDirection: 'row',
       height: '100vh',
       width: '100%',
-      backgroundImage: "url('/background.png')",
-      backgroundSize: 'cover',
-      backgroundPosition: 'center',
-      backgroundColor: '#f8fafc',
+      background: SOFT_GLOW_BG,
       position: 'relative',
       fontFamily: 'Outfit, sans-serif',
-      color: '#1e293b',
+      color: SOFT_TEXT,
       overflow: 'hidden'
     }}>
       
@@ -2978,9 +2979,10 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
         width: '380px',
         minWidth: '300px',
         maxWidth: '450px',
-        backgroundColor: 'rgba(255,255,255,0.95)',
-        backdropFilter: 'blur(12px)',
-        borderRight: '1px solid rgba(226,232,240,0.6)',
+        backgroundColor: SOFT_GLASS,
+        backdropFilter: 'blur(18px)',
+        WebkitBackdropFilter: 'blur(18px)',
+        borderRight: '1px solid rgba(167,139,250,0.18)',
         display: 'flex',
         flexDirection: 'column',
         padding: '20px',
@@ -3123,15 +3125,15 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '10px',
-                padding: '14px 20px',
-                backgroundColor: '#0f172a',
+                padding: '15px 20px',
+                background: SOFT_PRIMARY_GRADIENT,
                 color: 'white',
-                borderRadius: '12px',
+                borderRadius: '16px',
                 fontWeight: 700,
                 fontSize: '13px',
                 border: 'none',
                 cursor: 'pointer',
-                boxShadow: '0 4px 16px rgba(15, 23, 42, 0.2)',
+                boxShadow: '0 8px 22px rgba(167, 139, 250, 0.45)',
                 transition: 'all 0.2s'
               }}
             >
@@ -3242,7 +3244,7 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
         position: 'relative',
         zIndex: 10,
         height: '100%',
-        backgroundColor: 'rgba(255,255,255,0.3)'
+        backgroundColor: 'transparent'
       }}>
         
         {/* Error Message */}
@@ -3276,9 +3278,10 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
           style={{
             display: 'none', // Gestito da CSS
             flexDirection: 'column',
-            backgroundColor: 'rgba(255,255,255,0.98)',
-            backdropFilter: 'blur(12px)',
-            borderBottom: '1px solid rgba(226,232,240,0.6)',
+            backgroundColor: SOFT_GLASS,
+            backdropFilter: 'blur(18px)',
+            WebkitBackdropFilter: 'blur(18px)',
+            borderBottom: '1px solid rgba(167,139,250,0.18)',
             flexShrink: 0
           }}
         >
@@ -3386,8 +3389,10 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
           gap: '16px',
           padding: '10px 20px',
           flexShrink: 0,
-          borderBottom: '1px solid rgba(226,232,240,0.4)',
-          backgroundColor: 'rgba(255,255,255,0.4)'
+          borderBottom: '1px solid rgba(167,139,250,0.15)',
+          backgroundColor: 'rgba(255,251,254,0.45)',
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)'
         }}>
           <div className="visualizer-wrapper" style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', transform: 'scale(0.5)' }}>
             <AudioVisualizer isPlaying={isConnected} volume={audioVolume} />
@@ -3459,18 +3464,22 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
             >
               <div style={{
                 maxWidth: '70%',
-                borderRadius: '16px',
-                padding: t.type === 'action' ? '0' : '16px 20px',
+                borderRadius: '20px',
+                borderBottomRightRadius: t.sender === 'user' && t.type !== 'action' ? '6px' : '20px',
+                borderBottomLeftRadius: t.sender === 'model' && t.type !== 'action' ? '6px' : '20px',
+                padding: t.type === 'action' ? '0' : '14px 18px',
                 fontSize: '14px',
                 lineHeight: 1.6,
-                backgroundColor: t.sender === 'user' 
-                  ? '#0f172a' 
-                  : t.type === 'action' 
-                    ? 'transparent' 
-                    : 'white',
-                color: t.sender === 'user' ? 'white' : '#334155',
-                boxShadow: t.type === 'action' ? 'none' : '0 2px 12px rgba(0,0,0,0.08)',
-                border: t.sender === 'user' || t.type === 'action' ? 'none' : '1px solid #f1f5f9'
+                background: t.sender === 'user'
+                  ? SOFT_PRIMARY_GRADIENT
+                  : t.type === 'action'
+                    ? 'transparent'
+                    : 'rgba(255,255,255,0.82)',
+                backdropFilter: t.type === 'action' ? 'none' : 'blur(10px)',
+                WebkitBackdropFilter: t.type === 'action' ? 'none' : 'blur(10px)',
+                color: t.sender === 'user' ? 'white' : SOFT_TEXT,
+                boxShadow: t.type === 'action' ? 'none' : '0 6px 20px rgba(124,58,237,0.10)',
+                border: t.sender === 'user' || t.type === 'action' ? 'none' : '1px solid rgba(167,139,250,0.18)'
               }}>
                 {/* Label */}
                 {t.type !== 'action' && (
@@ -3480,7 +3489,7 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
                     textTransform: 'uppercase',
                     letterSpacing: '0.1em',
                     marginBottom: '6px',
-                    color: t.sender === 'user' ? '#94a3b8' : '#9333ea'
+                    color: t.sender === 'user' ? 'rgba(255,255,255,0.85)' : SOFT_ACCENT
                   }}>
                     {t.sender === 'user' ? (config.userName || 'Tu') : config.name}
                   </div>
@@ -3626,9 +3635,10 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
 
         {/* Footer Area con pulsanti e copyright */}
         <div className="chat-footer" style={{
-          borderTop: '1px solid rgba(226,232,240,0.5)',
-          backgroundColor: 'rgba(255,255,255,0.95)',
-          backdropFilter: 'blur(8px)',
+          borderTop: '1px solid rgba(167,139,250,0.18)',
+          backgroundColor: SOFT_GLASS,
+          backdropFilter: 'blur(18px)',
+          WebkitBackdropFilter: 'blur(18px)',
           flexShrink: 0
         }}>
           {/* --- MENU OPZIONI MOBILE: stesso menu a scomparsa della versione desktop --- */}
@@ -3695,15 +3705,15 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '8px',
-                  padding: '12px 20px',
-                  backgroundColor: '#0f172a',
+                  padding: '13px 20px',
+                  background: SOFT_PRIMARY_GRADIENT,
                   color: 'white',
-                  borderRadius: '10px',
+                  borderRadius: '14px',
                   fontWeight: 700,
                   fontSize: '13px',
                   border: 'none',
                   cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(15, 23, 42, 0.2)'
+                  boxShadow: '0 6px 18px rgba(167, 139, 250, 0.45)'
                 }}
               >
                 <Mic size={16} />
