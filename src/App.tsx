@@ -446,6 +446,194 @@ const OptionsMenu: React.FC<OptionsMenuProps> = ({
   );
 };
 
+// --- BOLLA MESSAGGIO (memoizzata): solo la bolla che cambia viene ridisegnata ---
+interface MessageBubbleProps {
+  item: TranscriptItem;
+  userName: string;
+  assistantName: string;
+  onDownload: (data: string, filename: string) => void;
+  onToggleKeep: (id: string) => void;
+}
+
+const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({ item: t, userName, assistantName, onDownload, onToggleKeep }) => {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: t.sender === 'user' ? 'flex-end' : 'flex-start'
+      }}
+    >
+      <div style={{
+        maxWidth: '70%',
+        borderRadius: '20px',
+        borderBottomRightRadius: t.sender === 'user' && t.type !== 'action' ? '6px' : '20px',
+        borderBottomLeftRadius: t.sender === 'model' && t.type !== 'action' ? '6px' : '20px',
+        padding: t.type === 'action' ? '0' : '14px 18px',
+        fontSize: '14px',
+        lineHeight: 1.6,
+        background: t.sender === 'user'
+          ? SOFT_PRIMARY_GRADIENT
+          : t.type === 'action'
+            ? 'transparent'
+            : 'rgba(255,255,255,0.82)',
+        backdropFilter: t.type === 'action' ? 'none' : 'blur(10px)',
+        WebkitBackdropFilter: t.type === 'action' ? 'none' : 'blur(10px)',
+        color: t.sender === 'user' ? 'white' : SOFT_TEXT,
+        boxShadow: t.type === 'action' ? 'none' : '0 6px 20px rgba(124,58,237,0.10)',
+        border: t.sender === 'user' || t.type === 'action' ? 'none' : '1px solid rgba(167,139,250,0.18)'
+      }}>
+        {/* Label */}
+        {t.type !== 'action' && (
+          <div style={{
+            fontSize: '10px',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.1em',
+            marginBottom: '6px',
+            color: t.sender === 'user' ? 'rgba(255,255,255,0.85)' : SOFT_ACCENT
+          }}>
+            {t.sender === 'user' ? (userName || 'Tu') : assistantName}
+          </div>
+        )}
+
+        {/* Text */}
+        {t.type === 'text' && <div>{t.text}</div>}
+
+        {/* Image - Ridimensionata */}
+        {t.type === 'image' && t.image && (
+          <div style={{
+            marginTop: '8px',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            position: 'relative',
+            maxWidth: '300px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+          }}>
+            <img
+              src={t.image}
+              alt="Foto"
+              style={{
+                width: '100%',
+                height: 'auto',
+                maxHeight: '400px',
+                objectFit: 'cover',
+                display: 'block'
+              }}
+            />
+            {/* Etichetta "conservata" quando la foto viene mantenuta dopo il riavvio */}
+            {t.keep && (
+              <div style={{
+                position: 'absolute',
+                top: '8px',
+                left: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '4px 8px',
+                backgroundColor: 'rgba(147, 51, 234, 0.92)',
+                color: 'white',
+                borderRadius: '999px',
+                fontSize: '10px',
+                fontWeight: 700,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+              }}>
+                <BookmarkCheck size={12} /> Conservata
+              </div>
+            )}
+            <div style={{ position: 'absolute', bottom: '8px', right: '8px', display: 'flex', gap: '8px' }}>
+              {/* Conserva: mantiene questa foto anche dopo il riavvio */}
+              <button
+                onClick={() => onToggleKeep(t.id)}
+                style={{
+                  padding: '8px',
+                  backgroundColor: t.keep ? '#9333ea' : 'white',
+                  color: t.keep ? 'white' : '#1e293b',
+                  borderRadius: '50%',
+                  border: 'none',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                title={t.keep ? 'Foto conservata (tocca per non conservarla più)' : 'Conserva questa foto (resterà dopo il riavvio)'}
+              >
+                {t.keep ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}
+              </button>
+              {/* Scarica sul dispositivo */}
+              <button
+                onClick={() => t.image && onDownload(t.image, `foto-${t.sender === 'user' ? userName : assistantName}-${Date.now()}.png`)}
+                style={{
+                  padding: '8px',
+                  backgroundColor: 'white',
+                  color: '#1e293b',
+                  borderRadius: '50%',
+                  border: 'none',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                title="Scarica immagine sul dispositivo"
+              >
+                <Download size={14} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Action */}
+        {t.type === 'action' && t.actionUrl && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 500, color: '#64748b' }}>{t.text}</div>
+            <button
+              onClick={() => {
+                // Per tel: e mailto: usiamo location.href per compatibilità mobile
+                if (t.actionUrl?.startsWith('mailto:') || t.actionUrl?.startsWith('tel:')) {
+                  window.location.href = t.actionUrl;
+                } else {
+                  window.open(t.actionUrl, '_blank', 'noopener,noreferrer');
+                }
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '16px',
+                borderRadius: '12px',
+                fontWeight: 700,
+                color: 'white',
+                border: 'none',
+                cursor: 'pointer',
+                textAlign: 'left',
+                width: '100%',
+                background: t.actionIcon === 'mail'
+                  ? 'linear-gradient(135deg, #ec4899, #f43f5e)'
+                  : t.actionIcon === 'send'
+                    ? 'linear-gradient(135deg, #0088cc, #00a0dc)'
+                    : t.actionIcon === 'phone'
+                      ? 'linear-gradient(135deg, #22c55e, #16a34a)'
+                      : 'linear-gradient(135deg, #10b981, #14b8a6)',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.15)'
+              }}
+            >
+              <div style={{ padding: '8px', backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: '50%' }}>
+                {t.actionIcon === 'mail' ? <Mail size={20} /> : t.actionIcon === 'send' ? <Send size={20} /> : t.actionIcon === 'phone' ? <Phone size={20} /> : <MessageCircle size={20} />}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: '15px' }}>{t.actionLabel}</span>
+                <span style={{ fontSize: '10px', opacity: 0.8, fontWeight: 400 }}>Tocca per {t.actionIcon === 'phone' ? 'chiamare' : 'aprire'}</span>
+              </div>
+              <ExternalLink size={16} style={{ marginLeft: 'auto', opacity: 0.8 }} />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
 const App: React.FC = () => {
   // === AUTHENTICATION STATE ===
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
@@ -718,6 +906,8 @@ const App: React.FC = () => {
   const lastUploadedImageRef = useRef<string | null>(null); // Ultima immagine caricata dall'utente per editing
   const lastAudioProcessTimeRef = useRef<number>(0); // Per tracciare latenza audio
   const audioQueueLengthRef = useRef<number>(0); // Contatore buffer in coda
+  const lastVolumeUpdateRef = useRef<number>(0); // Throttle aggiornamenti volume (evita re-render continui)
+  const audioVolumeRef = useRef<number>(0); // Ultimo volume impostato (evita set ridondanti)
   const isImportingContactsRef = useRef<boolean>(false); // Flag per import contatti
   // Google Calendar (GIS): client OAuth, scadenza token e timer di rinnovo
   const tokenClientRef = useRef<any>(null);
@@ -792,19 +982,19 @@ const App: React.FC = () => {
     });
   }, []);
 
-  const downloadImage = (base64Data: string, filename: string) => {
+  const downloadImage = useCallback((base64Data: string, filename: string) => {
     const link = document.createElement('a');
     link.href = base64Data;
     link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
+  }, []);
 
   // Conserva/non conserva una foto nella cronologia (sopravvive al riavvio)
-  const toggleKeepImage = (id: string) => {
+  const toggleKeepImage = useCallback((id: string) => {
     setTranscripts(prev => prev.map(t => t.id === id ? { ...t, keep: !t.keep } : t));
-  };
+  }, []);
 
   // Funzione per gestire l'upload di foto da parte dell'utente
   const handleUserPhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -2037,87 +2227,35 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
             const source = ctx.createMediaStreamSource(stream);
             inputSourceRef.current = source;
             
-            // LATENCY FIX V2: Buffer ancora più piccolo
-            const processor = ctx.createScriptProcessor(1024, 1, 1);
+            // Buffer più grande = meno callback sul thread principale = molto più
+            // robusto ai rallentamenti dell'interfaccia (e quindi alla latenza audio).
+            const processor = ctx.createScriptProcessor(4096, 1, 1);
             processorRef.current = processor;
-            
-            // Reset contatori latenza
-            lastAudioProcessTimeRef.current = performance.now();
-            audioQueueLengthRef.current = 0;
-            let consecutiveSlowFrames = 0;
-            let lastResetTime = performance.now();
-            
+
             processor.onaudioprocess = (e) => {
-              const now = performance.now();
-              const timeSinceLastProcess = now - lastAudioProcessTimeRef.current;
-              
-              // LATENCY FIX V2: Controllo più aggressivo
-              // Se il frame arriva troppo tardi (>200ms), salta
-              if (timeSinceLastProcess > 200) {
-                consecutiveSlowFrames++;
-                console.warn(`⚠️ Slow frame #${consecutiveSlowFrames}: ${timeSinceLastProcess.toFixed(0)}ms`);
-                
-                // Se abbiamo troppi frame lenti consecutivi, reset totale
-                if (consecutiveSlowFrames >= 3) {
-                  console.error(`🔄 Audio reset triggered after ${consecutiveSlowFrames} slow frames`);
-                  audioQueueLengthRef.current = 0;
-                  consecutiveSlowFrames = 0;
-                  lastResetTime = now;
-                }
-                
-                lastAudioProcessTimeRef.current = now;
-                return; // Salta questo buffer
-              }
-              
-              consecutiveSlowFrames = 0; // Reset se il frame è veloce
-              
-              // LATENCY FIX V2: Reset periodico ogni 30 secondi per prevenire accumulo
-              if (now - lastResetTime > 30000) {
-                console.log('🔄 Periodic audio queue reset');
-                audioQueueLengthRef.current = 0;
-                lastResetTime = now;
-              }
-              
-              // Controllo coda - più aggressivo
-              audioQueueLengthRef.current++;
-              if (audioQueueLengthRef.current > 3) {
-                console.warn(`⚠️ Queue overflow: ${audioQueueLengthRef.current} - clearing`);
-                audioQueueLengthRef.current = 0;
-                lastAudioProcessTimeRef.current = now;
-                return;
-              }
-              
-              lastAudioProcessTimeRef.current = now;
-              
-              const inputData = e.inputBuffer.getChannelData(0);
-              
-              // Calcola volume per visualizzazione (meno frequente)
-              if (Math.random() > 0.95) {
-                let sum = 0;
-                for(let i = 0; i < inputData.length; i += 8) sum += inputData[i] * inputData[i];
-                setAudioVolume(Math.sqrt(sum / (inputData.length / 8)) * 5);
-              }
-              
               if (isMutedRef.current) return;
-              
-              // Invia audio al server con timeout
-              const sendPromise = sessionPromiseRef.current?.then(session => {
-                session.sendRealtimeInput({ media: createBlob(inputData) });
-                audioQueueLengthRef.current = Math.max(0, audioQueueLengthRef.current - 1);
-              });
-              
-              // Timeout per evitare blocchi
-              if (sendPromise) {
-                Promise.race([
-                  sendPromise,
-                  new Promise((_, reject) => setTimeout(() => reject(new Error('Send timeout')), 500))
-                ]).catch(err => {
-                  console.warn('Audio send issue:', err.message);
-                  audioQueueLengthRef.current = 0;
-                });
+
+              const inputData = e.inputBuffer.getChannelData(0);
+
+              // Volume per il visualizzatore: aggiornato al massimo ogni 120ms,
+              // così non scateniamo un re-render dell'interfaccia a ogni frame.
+              const now = performance.now();
+              if (now - lastVolumeUpdateRef.current > 120) {
+                lastVolumeUpdateRef.current = now;
+                let sum = 0;
+                for (let i = 0; i < inputData.length; i += 16) sum += inputData[i] * inputData[i];
+                const vol = Math.min(1, Math.sqrt(sum / (inputData.length / 16)) * 5);
+                audioVolumeRef.current = vol;
+                setAudioVolume(vol);
               }
+
+              // Invia SEMPRE l'audio al server. Scartare i buffer (come faceva la vecchia
+              // logica) corrompe il parlato e fa arrivare la trascrizione in enorme ritardo.
+              sessionPromiseRef.current?.then(session => {
+                try { session.sendRealtimeInput({ media: createBlob(inputData) }); } catch (err) { /* ignora */ }
+              });
             };
-            
+
             source.connect(processor);
             processor.connect(ctx.destination);
           },
@@ -2175,8 +2313,9 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
                 const effectiveSpeed = (config.voiceSpeed || 1.0) * detuneFactor;
 
                 source.connect(ctx.destination);
-                source.addEventListener('ended', () => { audioSourcesRef.current.delete(source); if(audioSourcesRef.current.size===0) setAudioVolume(0); });
-                setAudioVolume(0.5);
+                source.addEventListener('ended', () => { audioSourcesRef.current.delete(source); if(audioSourcesRef.current.size===0) { audioVolumeRef.current = 0; setAudioVolume(0); } });
+                // Evita set ridondanti: imposta il volume "attivo" solo se non lo è già.
+                if (audioVolumeRef.current < 0.4) { audioVolumeRef.current = 0.5; setAudioVolume(0.5); }
                 source.start(nextStartTimeRef.current);
                 // Advance the cursor by the ACTUAL duration played (original duration / effective speed)
                 nextStartTimeRef.current += buffer.duration / effectiveSpeed;
@@ -3455,181 +3594,14 @@ Parla sempre in italiano rispettando RIGOROSAMENTE il Tono definito nel Modulo P
           )}
           
           {transcripts.map((t) => (
-            <div 
-              key={t.id} 
-              style={{ 
-                display: 'flex', 
-                justifyContent: t.sender === 'user' ? 'flex-end' : 'flex-start' 
-              }}
-            >
-              <div style={{
-                maxWidth: '70%',
-                borderRadius: '20px',
-                borderBottomRightRadius: t.sender === 'user' && t.type !== 'action' ? '6px' : '20px',
-                borderBottomLeftRadius: t.sender === 'model' && t.type !== 'action' ? '6px' : '20px',
-                padding: t.type === 'action' ? '0' : '14px 18px',
-                fontSize: '14px',
-                lineHeight: 1.6,
-                background: t.sender === 'user'
-                  ? SOFT_PRIMARY_GRADIENT
-                  : t.type === 'action'
-                    ? 'transparent'
-                    : 'rgba(255,255,255,0.82)',
-                backdropFilter: t.type === 'action' ? 'none' : 'blur(10px)',
-                WebkitBackdropFilter: t.type === 'action' ? 'none' : 'blur(10px)',
-                color: t.sender === 'user' ? 'white' : SOFT_TEXT,
-                boxShadow: t.type === 'action' ? 'none' : '0 6px 20px rgba(124,58,237,0.10)',
-                border: t.sender === 'user' || t.type === 'action' ? 'none' : '1px solid rgba(167,139,250,0.18)'
-              }}>
-                {/* Label */}
-                {t.type !== 'action' && (
-                  <div style={{
-                    fontSize: '10px',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.1em',
-                    marginBottom: '6px',
-                    color: t.sender === 'user' ? 'rgba(255,255,255,0.85)' : SOFT_ACCENT
-                  }}>
-                    {t.sender === 'user' ? (config.userName || 'Tu') : config.name}
-                  </div>
-                )}
-
-                {/* Text */}
-                {t.type === 'text' && <div>{t.text}</div>}
-
-                {/* Image - Ridimensionata */}
-                {t.type === 'image' && t.image && (
-                  <div style={{ 
-                    marginTop: '8px', 
-                    borderRadius: '12px', 
-                    overflow: 'hidden', 
-                    position: 'relative',
-                    maxWidth: '300px',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-                  }}>
-                    <img 
-                      src={t.image} 
-                      alt="Foto" 
-                      style={{ 
-                        width: '100%', 
-                        height: 'auto',
-                        maxHeight: '400px',
-                        objectFit: 'cover',
-                        display: 'block'
-                      }} 
-                    />
-                    {/* Etichetta "conservata" quando la foto viene mantenuta dopo il riavvio */}
-                    {t.keep && (
-                      <div style={{
-                        position: 'absolute',
-                        top: '8px',
-                        left: '8px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        padding: '4px 8px',
-                        backgroundColor: 'rgba(147, 51, 234, 0.92)',
-                        color: 'white',
-                        borderRadius: '999px',
-                        fontSize: '10px',
-                        fontWeight: 700,
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
-                      }}>
-                        <BookmarkCheck size={12} /> Conservata
-                      </div>
-                    )}
-                    <div style={{ position: 'absolute', bottom: '8px', right: '8px', display: 'flex', gap: '8px' }}>
-                      {/* Conserva: mantiene questa foto anche dopo il riavvio */}
-                      <button
-                        onClick={() => toggleKeepImage(t.id)}
-                        style={{
-                          padding: '8px',
-                          backgroundColor: t.keep ? '#9333ea' : 'white',
-                          color: t.keep ? 'white' : '#1e293b',
-                          borderRadius: '50%',
-                          border: 'none',
-                          cursor: 'pointer',
-                          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
-                        title={t.keep ? 'Foto conservata (tocca per non conservarla più)' : 'Conserva questa foto (resterà dopo il riavvio)'}
-                      >
-                        {t.keep ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}
-                      </button>
-                      {/* Scarica sul dispositivo */}
-                      <button
-                        onClick={() => t.image && downloadImage(t.image, `foto-${t.sender === 'user' ? config.userName : config.name}-${Date.now()}.png`)}
-                        style={{
-                          padding: '8px',
-                          backgroundColor: 'white',
-                          color: '#1e293b',
-                          borderRadius: '50%',
-                          border: 'none',
-                          cursor: 'pointer',
-                          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
-                        title="Scarica immagine sul dispositivo"
-                      >
-                        <Download size={14} />
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Action */}
-                {t.type === 'action' && t.actionUrl && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ fontSize: '12px', fontWeight: 500, color: '#64748b' }}>{t.text}</div>
-                    <button 
-                      onClick={() => {
-                        // Per tel: e mailto: usiamo location.href per compatibilità mobile
-                        if (t.actionUrl?.startsWith('mailto:') || t.actionUrl?.startsWith('tel:')) {
-                          window.location.href = t.actionUrl;
-                        } else {
-                          window.open(t.actionUrl, '_blank', 'noopener,noreferrer');
-                        }
-                      }}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        padding: '16px',
-                        borderRadius: '12px',
-                        fontWeight: 700,
-                        color: 'white',
-                        border: 'none',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        width: '100%',
-                        background: t.actionIcon === 'mail' 
-                          ? 'linear-gradient(135deg, #ec4899, #f43f5e)' 
-                          : t.actionIcon === 'send'
-                            ? 'linear-gradient(135deg, #0088cc, #00a0dc)'
-                            : t.actionIcon === 'phone'
-                              ? 'linear-gradient(135deg, #22c55e, #16a34a)'
-                              : 'linear-gradient(135deg, #10b981, #14b8a6)',
-                        boxShadow: '0 4px 16px rgba(0,0,0,0.15)'
-                      }}
-                    >
-                      <div style={{ padding: '8px', backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: '50%' }}>
-                        {t.actionIcon === 'mail' ? <Mail size={20} /> : t.actionIcon === 'send' ? <Send size={20} /> : t.actionIcon === 'phone' ? <Phone size={20} /> : <MessageCircle size={20} />}
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span style={{ fontSize: '15px' }}>{t.actionLabel}</span>
-                        <span style={{ fontSize: '10px', opacity: 0.8, fontWeight: 400 }}>Tocca per {t.actionIcon === 'phone' ? 'chiamare' : 'aprire'}</span>
-                      </div>
-                      <ExternalLink size={16} style={{ marginLeft: 'auto', opacity: 0.8 }} />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
+            <MessageBubble
+              key={t.id}
+              item={t}
+              userName={config.userName}
+              assistantName={config.name}
+              onDownload={downloadImage}
+              onToggleKeep={toggleKeepImage}
+            />
           ))}
         </div>
 
